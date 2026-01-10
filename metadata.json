@@ -1,0 +1,7 @@
+{
+  "name": "核心領航員：穩定協議",
+  "description": "具備星際核心穩定系統與 SOP 協議的進階情感調節模擬器，專為領航員培訓設計。",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
