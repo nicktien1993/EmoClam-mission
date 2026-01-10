@@ -15,11 +15,12 @@
             margin: 0;
             overflow: hidden;
             font-family: 'Noto Sans TC', sans-serif;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
         .font-mono-tech { font-family: 'Share Tech Mono', monospace; }
         .font-header { font-family: 'Black Ops One', 'Noto Sans TC', sans-serif; }
         
-        /* Scanline Effect */
         .scanlines::before {
             content: " ";
             display: block;
@@ -31,12 +32,6 @@
             pointer-events: none;
         }
 
-        /* Cockpit Shadow Inset */
-        .cockpit-inset {
-            box-shadow: inset 0 0 50px rgba(0,0,0,0.8);
-        }
-
-        /* Animation for Glowing */
         @keyframes pulse-cyan {
             0%, 100% { box-shadow: 0 0 10px rgba(76, 201, 240, 0.4); }
             50% { box-shadow: 0 0 25px rgba(76, 201, 240, 0.7); }
