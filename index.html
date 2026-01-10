@@ -21,6 +21,19 @@
         .font-mono-tech { font-family: 'Share Tech Mono', monospace; }
         .font-header { font-family: 'Black Ops One', 'Noto Sans TC', sans-serif; }
         
+        #root:empty::before {
+            content: "CORE SYSTEM INITIALIZING...";
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #22d3ee;
+            font-family: 'Share Tech Mono', monospace;
+            letter-spacing: 0.5em;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
         .scanlines::before {
             content: " ";
             display: block;
@@ -31,25 +44,34 @@
             background-size: 100% 4px, 3px 100%;
             pointer-events: none;
         }
-
-        @keyframes pulse-cyan {
-            0%, 100% { box-shadow: 0 0 10px rgba(76, 201, 240, 0.4); }
-            50% { box-shadow: 0 0 25px rgba(76, 201, 240, 0.7); }
-        }
-        .glow-cyan { animation: pulse-cyan 2s infinite; }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3"
+    "lucide-react": "https://esm.sh/lucide-react@0.460.0?external=react,react-dom",
+    "react-dom/": "https://esm.sh/react-dom@19.0.0/",
+    "react/": "https://esm.sh/react@19.0.0/",
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0"
   }
 }
 </script>
 </head>
 <body class="bg-black text-slate-200">
     <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
+    <script>
+        // 錯誤監測：如果 GitHub Pages 報錯顯示黑屏，這會給出提示
+        window.onerror = function(msg, url, line) {
+            if (msg.includes('Unexpected token')) {
+                const root = document.getElementById('root');
+                root.innerHTML = `<div style="padding:20px; color:#f87171; font-family:sans-serif; text-align:center;">
+                    <h1 style="font-size:20px;">⚠️ 部署錯誤 (Deployment Error)</h1>
+                    <p style="font-size:14px; margin-top:10px;">GitHub Pages 不支援直接讀取 .tsx 檔案。</p>
+                    <p style="font-size:12px; color:#94a3b8;">請確保您已執行過 Build 指令並上傳 dist 內容。</p>
+                </div>`;
+            }
+        };
+    </script>
 </body>
 </html>

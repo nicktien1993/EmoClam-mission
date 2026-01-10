@@ -19,27 +19,25 @@ const ICON_MAP: Record<string, any> = {
   GlassWater, PenTool, Music
 };
 
-// Singleton AudioContext to prevent system crash due to too many contexts
+// --- 音訊系統優化 (防止崩潰) ---
 let sharedAudioCtx: AudioContext | null = null;
 const getAudioCtx = () => {
-  if (!sharedAudioCtx) {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    if (AudioContextClass) {
-      sharedAudioCtx = new AudioContextClass();
+  try {
+    if (!sharedAudioCtx) {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) sharedAudioCtx = new AudioContextClass();
     }
-  }
-  if (sharedAudioCtx?.state === 'suspended') {
-    sharedAudioCtx.resume();
-  }
-  return sharedAudioCtx;
+    if (sharedAudioCtx?.state === 'suspended') sharedAudioCtx.resume();
+    return sharedAudioCtx;
+  } catch (e) { return null; }
 };
 
 const playSfx = (type: string, customDuration?: number) => {
   const ctx = getAudioCtx();
-  if (!ctx) return;
+  if (!ctx || ctx.state === 'closed') return;
 
   try {
-    const playTone = (freq: number, oscType: OscillatorType, duration: number, volume: number = 0.1) => {
+    const playTone = (freq: number, oscType: OscillatorType, duration: number, volume: number = 0.05) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = oscType;
@@ -52,83 +50,44 @@ const playSfx = (type: string, customDuration?: number) => {
       osc.stop(ctx.currentTime + duration);
     };
 
-    const playBreath = (isInhale: boolean, duration: number) => {
-      const bufferSize = ctx.sampleRate * duration;
-      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) { data[i] = Math.random() * 2 - 1; }
-      const noise = ctx.createBufferSource();
-      noise.buffer = buffer;
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      const gain = ctx.createGain();
-      if (isInhale) {
-        filter.frequency.setValueAtTime(200, ctx.currentTime);
-        filter.frequency.exponentialRampToValueAtTime(1500, ctx.currentTime + duration);
-        gain.gain.setValueAtTime(0.001, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.05, ctx.currentTime + duration * 0.8);
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
-      } else {
-        filter.frequency.setValueAtTime(1500, ctx.currentTime);
-        filter.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + duration);
-        gain.gain.setValueAtTime(0.05, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.001, ctx.currentTime + duration);
-      }
-      noise.connect(filter);
-      filter.connect(gain);
-      gain.connect(ctx.destination);
-      noise.start();
-      noise.stop(ctx.currentTime + duration);
-    };
-
     switch (type) {
-      case 'click': playTone(800, 'sine', 0.1, 0.05); break;
-      case 'draw': playTone(300, 'sawtooth', 0.6, 0.03); setTimeout(() => playTone(500, 'sawtooth', 0.6, 0.03), 100); break;
+      case 'click': playTone(800, 'sine', 0.1); break;
+      case 'draw': playTone(300, 'sawtooth', 0.5, 0.02); break;
       case 'scan':
         const o1 = ctx.createOscillator();
-        const o2 = ctx.createOscillator();
         const g = ctx.createGain();
-        o1.type = 'sawtooth'; o2.type = 'sine';
-        o1.frequency.setValueAtTime(150, ctx.currentTime);
-        o1.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 1.2);
-        o2.frequency.setValueAtTime(440, ctx.currentTime);
-        o2.frequency.exponentialRampToValueAtTime(2200, ctx.currentTime + 1.2);
+        o1.type = 'sawtooth';
+        o1.frequency.setValueAtTime(100, ctx.currentTime);
+        o1.frequency.exponentialRampToValueAtTime(1000, ctx.currentTime + 0.5);
         g.gain.setValueAtTime(0.02, ctx.currentTime);
-        g.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.2);
-        o1.connect(g); o2.connect(g); g.connect(ctx.destination);
-        o1.start(); o2.start(); o1.stop(ctx.currentTime + 1.2); o2.stop(ctx.currentTime + 1.2);
+        g.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+        o1.connect(g); g.connect(ctx.destination);
+        o1.start(); o1.stop(ctx.currentTime + 0.5);
         break;
-      case 'correct': playTone(523.25, 'sine', 0.4, 0.08); setTimeout(() => playTone(659.25, 'sine', 0.4, 0.08), 150); break;
-      case 'wrong': playTone(150, 'square', 0.4, 0.04); break;
+      case 'correct': playTone(523.25, 'sine', 0.3, 0.05); setTimeout(() => playTone(659.25, 'sine', 0.3, 0.05), 100); break;
+      case 'wrong': playTone(140, 'square', 0.3, 0.03); break;
       case 'pressure':
-        const dur = customDuration || 5;
         const pOsc = ctx.createOscillator();
-        const pMod = ctx.createOscillator();
         const pGain = ctx.createGain();
-        const pModGain = ctx.createGain();
         pOsc.type = 'triangle';
-        pOsc.frequency.setValueAtTime(50, ctx.currentTime);
-        pOsc.frequency.linearRampToValueAtTime(150, ctx.currentTime + dur);
-        pMod.type = 'sine'; pMod.frequency.setValueAtTime(5, ctx.currentTime);
-        pModGain.gain.setValueAtTime(15, ctx.currentTime);
-        pMod.connect(pModGain); pModGain.connect(pOsc.frequency);
-        pGain.gain.setValueAtTime(0.05, ctx.currentTime); pGain.gain.linearRampToValueAtTime(0, ctx.currentTime + dur);
+        pOsc.frequency.setValueAtTime(60, ctx.currentTime);
+        pOsc.frequency.linearRampToValueAtTime(120, ctx.currentTime + (customDuration || 5));
+        pGain.gain.setValueAtTime(0.03, ctx.currentTime);
+        pGain.gain.linearRampToValueAtTime(0, ctx.currentTime + (customDuration || 5));
         pOsc.connect(pGain); pGain.connect(ctx.destination);
-        pOsc.start(); pMod.start(); pOsc.stop(ctx.currentTime + dur); pMod.stop(ctx.currentTime + dur);
+        pOsc.start(); pOsc.stop(ctx.currentTime + (customDuration || 5));
         break;
-      case 'inhale': playBreath(true, customDuration || 3); break;
-      case 'exhale': playBreath(false, customDuration || 3); break;
+      case 'inhale': 
+        playTone(200, 'sine', customDuration || 3, 0.02);
+        break;
+      case 'exhale':
+        playTone(400, 'sine', customDuration || 3, 0.02);
+        break;
       case 'hiss':
-        const bSize = 2 * ctx.sampleRate, nBuf = ctx.createBuffer(1, bSize, ctx.sampleRate), o = nBuf.getChannelData(0);
-        for (let i = 0; i < bSize; i++) { o[i] = Math.random() * 2 - 1; }
-        const noiseSource = ctx.createBufferSource(); noiseSource.buffer = nBuf;
-        const noiseGain = ctx.createGain(); noiseGain.gain.setValueAtTime(0.03, ctx.currentTime); noiseGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 2.5);
-        noiseSource.connect(noiseGain); noiseGain.connect(ctx.destination); noiseSource.start();
+        playTone(100, 'square', 1.0, 0.01);
         break;
     }
-  } catch (err) {
-    console.warn("SFX failed:", err);
-  }
+  } catch (err) {}
 };
 
 const DEFAULT_MISSION_CONFIG: MissionConfig = {
@@ -166,8 +125,10 @@ const App: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
+  // --- 資源管理 Refs (解決崩潰與邏輯卡死) ---
   const pressureTimerRef = useRef<number | null>(null);
   const decayTimerRef = useRef<number | null>(null);
+  const breathTimerRef = useRef<number | null>(null);
   const [pressure, setPressure] = useState(0);
   const [isPressing, setIsPressing] = useState(false);
   const [isDecompressing, setIsDecompressing] = useState(false);
@@ -176,15 +137,10 @@ const App: React.FC = () => {
   const [breathCount, setBreathCount] = useState(0);
 
   const clearAllTimers = useCallback(() => {
-    if (pressureTimerRef.current !== null) { clearInterval(pressureTimerRef.current); pressureTimerRef.current = null; }
-    if (decayTimerRef.current !== null) { clearInterval(decayTimerRef.current); decayTimerRef.current = null; }
+    if (pressureTimerRef.current) { clearInterval(pressureTimerRef.current); pressureTimerRef.current = null; }
+    if (decayTimerRef.current) { clearInterval(decayTimerRef.current); decayTimerRef.current = null; }
+    if (breathTimerRef.current) { clearTimeout(breathTimerRef.current); breathTimerRef.current = null; }
   }, []);
-
-  // Safe status transition
-  const transitionTo = useCallback((newStatus: GameState['status'], updates: Partial<GameState> = {}) => {
-    clearAllTimers();
-    setState(prev => ({ ...prev, status: newStatus, ...updates }));
-  }, [clearAllTimers]);
 
   useEffect(() => {
     return () => clearAllTimers();
@@ -192,15 +148,17 @@ const App: React.FC = () => {
 
   const addLog = useCallback((type: LogEntry['type'], content: string) => {
     const entry: LogEntry = { timestamp: new Date().toLocaleTimeString(), type, content };
-    setState(prev => ({ ...prev, history: [entry, ...prev.history] }));
+    setState(prev => ({ ...prev, history: [entry, ...prev.history].slice(0, 50) }));
   }, []);
 
+  // --- 修復重置功能 (Reset) ---
   const resetGame = useCallback(() => {
     playSfx('click');
     if (window.confirm("⚠️ 系統重置確認：確定要抹除核心數據並歸零 XP 嗎？")) {
       clearAllTimers();
       localStorage.removeItem('emotionPilotXP');
-      setState({
+      // 直接覆寫整個 State
+      const newState: GameState = {
         score: 0,
         xp: 0,
         round: 0,
@@ -212,32 +170,55 @@ const App: React.FC = () => {
         currentCard: null,
         status: 'splash',
         sopStep: 1,
-        missionConfig: DEFAULT_MISSION_CONFIG
-      });
+        missionConfig: { ...DEFAULT_MISSION_CONFIG }
+      };
+      setState(newState);
       setShowSettings(false);
       playSfx('wrong');
     }
   }, [clearAllTimers]);
 
+  // --- 修復中止功能 (Abort) ---
   const abortMission = useCallback(() => {
     playSfx('click');
-    if (window.confirm("⚠️ 終止任務確認：確定要立即返航並放棄當前進度嗎？")) {
-      transitionTo('splash', { currentCard: null, deck: [], round: 0, totalRounds: 0, score: 0, sopStep: 1 });
+    if (window.confirm("⚠️ 終止確認：確定要放棄任務並返航嗎？")) {
+      clearAllTimers();
+      setState(prev => ({
+        ...prev,
+        status: 'splash',
+        currentCard: null,
+        deck: [],
+        round: 0,
+        totalRounds: 0,
+        score: 0,
+        sopStep: 1
+      }));
       setShowSettings(false);
     }
-  }, [transitionTo]);
-
-  const startNewMission = useCallback(() => {
-    playSfx('click');
-    transitionTo('routing', { score: 0, round: 0, streak: 0, history: [], currentRoute: null, deck: [], currentCard: null, sopStep: 1 });
-  }, [transitionTo]);
+  }, [clearAllTimers]);
 
   const returnToSplash = useCallback(() => {
     playSfx('click');
-    if (window.confirm("確認結束任務並返回主系統介面？")) {
-        transitionTo('splash', { currentCard: null, deck: [], round: 0, totalRounds: 0, score: 0, sopStep: 1 });
+    if (window.confirm("確認返回總部系統首頁？當前任務進度將會丟失。")) {
+      clearAllTimers();
+      setState(prev => ({
+        ...prev,
+        status: 'splash',
+        currentCard: null,
+        deck: [],
+        round: 0,
+        totalRounds: 0,
+        score: 0,
+        sopStep: 1
+      }));
     }
-  }, [transitionTo]);
+  }, [clearAllTimers]);
+
+  const startNewMission = useCallback(() => {
+    playSfx('click');
+    clearAllTimers();
+    setState(prev => ({ ...prev, score: 0, round: 0, streak: 0, history: [], currentRoute: null, deck: [], currentCard: null, status: 'routing', sopStep: 1 }));
+  }, [clearAllTimers]);
 
   const selectRoute = useCallback((route: string) => {
     playSfx('click');
@@ -304,13 +285,13 @@ const App: React.FC = () => {
     if (isCorrect) {
       playSfx('correct');
       setState(prev => ({ ...prev, score: prev.score + (prev.currentCard?.isBoss ? 50 : 20), xp: prev.xp + 5 }));
-      addLog('decision', `判斷正確：${choice}`);
+      addLog('decision', `核心判斷：對準 ${choice}`);
       if (choice === '危險') triggerSOP();
       else nextTurn();
     } else {
       playSfx('wrong');
       setState(prev => ({ ...prev, score: Math.max(0, prev.score - 10) }));
-      addLog('decision', `判斷錯誤：選擇了 ${choice}`);
+      addLog('decision', `核心失準：偵測到 ${choice}`);
       if (state.currentCard.type === '危險') triggerSOP();
       else nextTurn();
     }
@@ -320,17 +301,11 @@ const App: React.FC = () => {
     if (pressure >= 100 || isDecompressing) return;
     setIsPressing(true);
     if (decayTimerRef.current) { clearInterval(decayTimerRef.current); decayTimerRef.current = null; }
-    
     const increment = 100 / (state.missionConfig.pressureDuration * 25);
     playSfx('pressure', state.missionConfig.pressureDuration);
-    
     pressureTimerRef.current = window.setInterval(() => {
       setPressure(p => {
-        if (p >= 100) { 
-          if (pressureTimerRef.current) clearInterval(pressureTimerRef.current); 
-          pressureTimerRef.current = null; 
-          return 100; 
-        }
+        if (p >= 100) { if (pressureTimerRef.current) clearInterval(pressureTimerRef.current); pressureTimerRef.current = null; return 100; }
         return p + increment;
       });
     }, 40);
@@ -343,9 +318,9 @@ const App: React.FC = () => {
       decayTimerRef.current = window.setInterval(() => {
         setPressure(p => {
           if (p <= 0) { if (decayTimerRef.current) clearInterval(decayTimerRef.current); decayTimerRef.current = null; return 0; }
-          return p - 0.8;
+          return p - 1.5;
         });
-      }, 50);
+      }, 40);
     }
   };
 
@@ -362,14 +337,14 @@ const App: React.FC = () => {
         }
         setState(prev => ({ ...prev, sopStep: nextStep }));
         setPressure(0); setBreathCount(0); setBreathPhase('ready');
-      }, 2500);
+      }, 1500);
     }
   };
 
   const startScanningCard = () => {
     if (isFlipped || isScanning) return;
     setIsScanning(true); playSfx('scan');
-    setTimeout(() => { setIsScanning(false); setIsFlipped(true); playSfx('correct'); }, 1500);
+    setTimeout(() => { setIsScanning(false); setIsFlipped(true); playSfx('correct'); }, 1200);
   };
 
   const handleNextStep = () => {
@@ -385,22 +360,25 @@ const App: React.FC = () => {
     playSfx('correct');
     const emoLabel = EMOTIONS.find(e => e.id === sopSelection.emotion)?.cn || '';
     const needLabel = NEEDS.find(n => n.id === sopSelection.need)?.cn || '';
-    addLog('sop', `核心穩定回報：偵測到 ${emoLabel}，部署協議 ${needLabel}`);
+    addLog('sop', `穩定回報：偵測 ${emoLabel}，執行 ${needLabel}`);
     setState(prev => ({ ...prev, xp: prev.xp + 10 }));
     setSopSelection({ emotion: '', need: '' });
     nextTurn();
   };
 
+  // --- 呼吸循環優化 (防死迴圈) ---
   useEffect(() => {
     if (state.status === 'sop' && state.sopStep === 2 && breathCount < state.missionConfig.breathCycles) {
       const config = state.missionConfig;
       if (breathPhase === 'ready') {
-         const t = setTimeout(() => { setBreathPhase('inhale'); playSfx('inhale', config.inhaleTime); }, 1000);
-         return () => clearTimeout(t);
+         breathTimerRef.current = window.setTimeout(() => { setBreathPhase('inhale'); playSfx('inhale', config.inhaleTime); }, 800);
+         return;
       }
       
-      const durations = { ready: 1000, inhale: config.inhaleTime * 1000, hold: config.holdTime * 1000, exhale: config.exhaleTime * 1000, done: 0 };
-      const timer = setTimeout(() => {
+      const durations = { ready: 800, inhale: config.inhaleTime * 1000, hold: config.holdTime * 1000, exhale: config.exhaleTime * 1000, done: 0 };
+      const currentDuration = durations[breathPhase as keyof typeof durations] || 1000;
+      
+      breathTimerRef.current = window.setTimeout(() => {
         setBreathPhase(current => {
           if (current === 'inhale') return 'hold';
           if (current === 'hold') { playSfx('exhale', config.exhaleTime); return 'exhale'; }
@@ -412,8 +390,9 @@ const App: React.FC = () => {
           }
           return current;
         });
-      }, durations[breathPhase as keyof typeof durations]);
-      return () => clearTimeout(timer);
+      }, currentDuration);
+      
+      return () => { if (breathTimerRef.current) window.clearTimeout(breathTimerRef.current); };
     }
   }, [state.status, state.sopStep, breathPhase, breathCount, state.missionConfig]);
 
@@ -431,7 +410,7 @@ const App: React.FC = () => {
         </div>
         <div className="hidden sm:block">
           <h1 className="font-header text-sm tracking-widest text-white uppercase leading-none">Core Pilot Protocol</h1>
-          <p className="text-[8px] text-zinc-500 font-mono-tech tracking-tighter uppercase mt-0.5">V8.3 STABLE CORE</p>
+          <p className="text-[8px] text-zinc-500 font-mono-tech tracking-tighter uppercase mt-0.5">V8.5 CORE STABILIZED</p>
         </div>
       </div>
       <div className="flex gap-4 font-mono-tech">
@@ -510,7 +489,7 @@ const App: React.FC = () => {
                       </span>
                    </div>
                 </div>
-                <button onClick={applyConfigAndStart} className="w-full py-6 bg-emerald-600 hover:bg-emerald-500 text-white rounded-3xl font-black text-2xl border-b-8 border-emerald-950 shadow-xl active:translate-y-1 active:border-b-0">確認啟動</button>
+                <button onClick={applyConfigAndStart} className="w-full py-6 bg-emerald-600 hover:bg-emerald-500 text-white rounded-3xl font-black text-2xl border-b-8 border-emerald-950 shadow-xl active:translate-y-1 active:border-b-0">正式啟動</button>
               </div>
             </div>
           )}
@@ -545,7 +524,6 @@ const App: React.FC = () => {
                 <div className="w-full flex flex-col items-center gap-10 animate-in zoom-in duration-500">
                   <div onClick={startScanningCard} className={`relative w-[300px] h-[400px] cursor-pointer transition-all duration-700 preserve-3d ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}>
                     <div className="absolute inset-0 bg-zinc-900 border-4 border-zinc-800 rounded-[32px] flex flex-col items-center justify-center shadow-2xl overflow-hidden tech-card backface-hidden w-[300px] h-[400px]">
-                      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/hexellence.png')] opacity-10" />
                       <div className="absolute inset-4 border border-cyan-500/10 rounded-[24px]" />
                       <div className="relative z-10 flex flex-col items-center gap-6">
                          <div className={`p-8 bg-zinc-950 rounded-2xl border-2 border-zinc-800 transition-all ${isScanning ? 'border-cyan-500 scale-110 shadow-glow-cyan' : ''}`}>
@@ -557,7 +535,6 @@ const App: React.FC = () => {
                     </div>
                     
                     <div className={`absolute inset-0 bg-zinc-900 border-4 ${state.currentCard.type === '安全' ? 'border-emerald-500 shadow-emerald-500/20' : 'border-rose-500 shadow-rose-500/20'} rounded-[32px] flex flex-col p-6 [transform:rotateY(180deg)] tech-card-front backface-hidden w-[300px] h-[400px]`}>
-                      <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/hexellence.png')]" />
                       <div className="flex justify-between items-center mb-4 relative z-10 font-mono-tech text-[10px] text-zinc-500 uppercase">
                          <div className="flex items-center gap-1.5"><Hexagon size={12} className={state.currentCard.type === '安全' ? 'text-emerald-400' : 'text-rose-400'} />OBJ_PKT</div>
                          <div className={state.currentCard.type === '安全' ? 'text-emerald-500' : 'text-rose-500'}>{state.currentCard.id.toUpperCase()}</div>
@@ -732,18 +709,6 @@ const App: React.FC = () => {
                       <div className="flex justify-between mb-3"><label className="text-xs text-zinc-400 uppercase font-black">任務單元數量</label><span className="text-cyan-400 font-mono-tech font-bold text-sm">{state.missionConfig.cardCount} / 10</span></div>
                       <input type="range" min="1" max="10" step="1" value={state.missionConfig.cardCount} onChange={e => updateConfig('cardCount', parseInt(e.target.value))} className="w-full h-1.5 bg-zinc-900 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
                     </div>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between p-3 bg-zinc-900 rounded-xl border border-zinc-800"><span className="text-xs text-zinc-400 uppercase font-black">加壓 SOP</span><button onClick={() => updateConfig('enablePressure', !state.missionConfig.enablePressure)} className="text-cyan-400">{state.missionConfig.enablePressure ? <ToggleRight size={32} /> : <ToggleLeft size={32} className="text-zinc-600" />}</button></div>
-                      <div className="flex items-center justify-between p-3 bg-zinc-900 rounded-xl border border-zinc-800"><span className="text-xs text-zinc-400 uppercase font-black">核心冷卻</span><button onClick={() => updateConfig('enableBreath', !state.missionConfig.enableBreath)} className="text-cyan-400">{state.missionConfig.enableBreath ? <ToggleRight size={32} /> : <ToggleLeft size={32} className="text-zinc-600" />}</button></div>
-                      <div className="flex items-center justify-between p-3 bg-zinc-900 rounded-xl border border-zinc-800"><span className="text-xs text-zinc-400 uppercase font-black">回報 SOP</span><button onClick={() => updateConfig('enableReport', !state.missionConfig.enableReport)} className="text-cyan-400">{state.missionConfig.enableReport ? <ToggleRight size={32} /> : <ToggleLeft size={32} className="text-zinc-600" />}</button></div>
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-8">
-                  <h3 className="text-xs font-black text-zinc-500 uppercase tracking-widest">SOP 詳細參數 / Params</h3>
-                  <div className="bg-zinc-800/40 p-6 rounded-3xl border border-zinc-800 space-y-8">
-                    <div><div className="flex justify-between mb-3"><label className="text-xs text-zinc-400 uppercase font-black">加壓時間</label><span className="text-amber-400 font-mono-tech font-bold text-sm">{state.missionConfig.pressureDuration} SEC</span></div><input type="range" min="2" max="10" step="1" value={state.missionConfig.pressureDuration} onChange={e => updateConfig('pressureDuration', parseInt(e.target.value))} className="w-full h-1.5 bg-zinc-900 rounded-lg accent-amber-500" /></div>
-                    <div><div className="flex justify-between mb-3"><label className="text-xs text-zinc-400 uppercase font-black">呼吸次數</label><span className="text-emerald-400 font-mono-tech font-bold text-sm">{state.missionConfig.breathCycles} CYCLES</span></div><input type="range" min="1" max="5" step="1" value={state.missionConfig.breathCycles} onChange={e => updateConfig('breathCycles', parseInt(e.target.value))} className="w-full h-1.5 bg-zinc-900 rounded-lg accent-emerald-500" /></div>
                   </div>
                 </div>
               </div>
@@ -766,12 +731,8 @@ const App: React.FC = () => {
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: currentColor; cursor: pointer; }
-        .drop-shadow-glow { filter: drop-shadow(0 0 8px currentColor); }
-        .shadow-glow-emerald { box-shadow: 0 0 30px rgba(16, 185, 129, 0.4); }
-        .shadow-glow-amber { box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
-        .shadow-glow-cyan { box-shadow: 0 0 20px rgba(34, 211, 238, 0.3); }
+        .glow-cyan { animation: pulse-cyan 2s infinite; }
         .tech-card, .tech-card-front { width: 300px; height: 400px; background: linear-gradient(135deg, #18181b 0%, #09090b 100%); will-change: transform; }
-        .tech-card::after, .tech-card-front::after { content: ''; position: absolute; inset: 0; background: linear-gradient(rgba(34, 211, 238, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(34, 211, 238, 0.05) 1px, transparent 1px); background-size: 20px 20px; pointer-events: none; }
       `}</style>
     </div>
   );
