@@ -5,6 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>核心領航員：穩定協議</title>
+    
+    <!-- PWA & App 標籤 -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#09090b">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="核心領航員">
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,6 +25,8 @@
             font-family: 'Noto Sans TC', sans-serif;
             user-select: none;
             -webkit-tap-highlight-color: transparent;
+            height: 100vh;
+            width: 100vw;
         }
         .font-mono-tech { font-family: 'Share Tech Mono', monospace; }
         .font-header { font-family: 'Black Ops One', 'Noto Sans TC', sans-serif; }
@@ -61,17 +71,28 @@
     <div id="root"></div>
     <script type="module" src="./index.tsx"></script>
     <script>
-        // 錯誤監測：如果 GitHub Pages 報錯顯示黑屏，這會給出提示
+        // 錯誤監測與 PWA 提示
         window.onerror = function(msg, url, line) {
-            if (msg.includes('Unexpected token')) {
+            if (msg.includes('Unexpected token') || msg.includes('tsx')) {
                 const root = document.getElementById('root');
-                root.innerHTML = `<div style="padding:20px; color:#f87171; font-family:sans-serif; text-align:center;">
-                    <h1 style="font-size:20px;">⚠️ 部署錯誤 (Deployment Error)</h1>
-                    <p style="font-size:14px; margin-top:10px;">GitHub Pages 不支援直接讀取 .tsx 檔案。</p>
-                    <p style="font-size:12px; color:#94a3b8;">請確保您已執行過 Build 指令並上傳 dist 內容。</p>
+                root.innerHTML = `<div style="padding:40px; color:#f87171; font-family:sans-serif; text-align:center; background:#111; height:100vh;">
+                    <h1 style="font-size:24px; font-weight:900;">⚠️ 系統部署衝突</h1>
+                    <p style="margin-top:20px;">GitHub Pages 無法直接解析原始 TypeScript 檔案。</p>
+                    <div style="background:#222; padding:15px; border-radius:10px; margin-top:20px; text-align:left; font-size:13px; color:#94a3b8;">
+                        <b>建議解決方案：</b><br>
+                        1. 使用 <a href="https://vercel.com" style="color:#22d3ee;">Vercel.com</a> 進行託管 (推薦，自動編譯)<br>
+                        2. 或是將專案 Build 之後上傳 dist 資料夾內容至 GitHub。
+                    </div>
                 </div>`;
             }
         };
+        
+        // 註冊簡易 Service Worker 以支援 PWA 離線緩存 (可選)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(() => {});
+            });
+        }
     </script>
 </body>
 </html>

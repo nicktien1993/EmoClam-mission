@@ -1,5 +1,5 @@
 
-export type EmotionZone = '安全' | '危險';
+export type EmotionZone = '開心' | '不開心';
 
 export interface Card {
   id: string;
