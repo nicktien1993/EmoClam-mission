@@ -81,8 +81,8 @@ const playSfx = (type: string, customDuration?: number) => {
       osc.connect(g); g.connect(ctx.destination);
       osc.start(); osc.stop(ctx.currentTime + 0.6);
       break;
-    case 'correct': playComplex([523.25, 659.25, 783.99], 'sine', 0.5, 0.04); break;
-    case 'wrong': playComplex([120, 150], 'square', 0.4, 0.02); break;
+    case 'correct': playComplex([600, 800, 1200], 'sine', 0.6, 0.05); break;
+    case 'wrong': playComplex([150, 100], 'square', 0.5, 0.03); break;
     case 'hiss': playNoise(1.5, 0.03); break;
     case 'pressure': 
       const pOsc = ctx.createOscillator();
@@ -152,7 +152,6 @@ const App: React.FC = () => {
 
   useEffect(() => { return () => clearAllTimers(); }, [clearAllTimers]);
 
-  // Persistent XP data
   useEffect(() => {
     localStorage.setItem('emotionPilotXP', state.xp.toString());
   }, [state.xp]);
@@ -162,15 +161,8 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, history: [entry, ...prev.history].slice(0, 50) }));
   }, []);
 
-  // Fix: Added updateConfig function to manage MissionConfig updates from UI
   const updateConfig = useCallback((key: keyof MissionConfig, value: any) => {
-    setState(prev => ({
-      ...prev,
-      missionConfig: {
-        ...prev.missionConfig,
-        [key]: value
-      }
-    }));
+    setState(prev => ({ ...prev, missionConfig: { ...prev.missionConfig, [key]: value } }));
   }, []);
 
   const resetGame = useCallback(() => {
@@ -348,6 +340,30 @@ const App: React.FC = () => {
     nextTurn();
   };
 
+  const getBreathSize = () => {
+    if (breathPhase === 'inhale') return 'w-48 h-48 bg-cyan-400/30';
+    if (breathPhase === 'hold') return 'w-48 h-48 bg-cyan-100/40 shadow-[0_0_50px_rgba(255,255,255,0.4)]';
+    if (breathPhase === 'exhale') return 'w-16 h-16 bg-cyan-400/10';
+    return 'w-16 h-16 bg-cyan-400/5';
+  };
+
+  const getBreathDuration = () => {
+    if (breathPhase === 'inhale') return `${state.missionConfig.inhaleTime}s`;
+    if (breathPhase === 'hold') return `${state.missionConfig.holdTime}s`;
+    if (breathPhase === 'exhale') return `${state.missionConfig.exhaleTime}s`;
+    return '0.8s';
+  };
+
+  const getPhaseText = (phase: string) => {
+    switch(phase) {
+      case 'inhale': return '吸氣...';
+      case 'hold': return '憋住...';
+      case 'exhale': return '吐氣...';
+      case 'ready': return '準備';
+      default: return '完成';
+    }
+  };
+
   return (
     <div className="fixed inset-0 flex items-center justify-center p-2 bg-zinc-950 scanlines overflow-hidden font-sans select-none" onContextMenu={(e) => e.preventDefault()}>
       <div className="absolute inset-0 opacity-10 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
@@ -355,7 +371,7 @@ const App: React.FC = () => {
         {/* Header */}
         <div className="flex justify-between items-center bg-zinc-900/95 border-b-2 border-zinc-800 p-3 relative z-50 h-16">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-400 flex items-center justify-center glow-cyan shadow-[0_0_15px_rgba(34,211,238,0.5)]">
+            <div className="w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-400 flex items-center justify-center glow-cyan">
               <LayoutPanelLeft className="text-cyan-400 w-5 h-5" />
             </div>
             <div className="hidden sm:block">
@@ -493,7 +509,6 @@ const App: React.FC = () => {
                </div>
                
                <div className="flex-1 p-6 flex flex-col items-center justify-center relative overflow-hidden">
-                 {/* 核心舒壓動畫：數位粒子噴射效果 */}
                  {isDecompressing && (
                    <div className="absolute inset-0 z-50 bg-cyan-900/90 backdrop-blur-xl flex flex-col items-center justify-center text-white">
                       <div className="relative">
@@ -531,24 +546,40 @@ const App: React.FC = () => {
                    <div className="text-center w-full max-w-sm animate-in slide-in-from-right">
                      <h3 className="text-2xl font-black text-white mb-2 tracking-widest uppercase">熱能冷卻 / Cool Down</h3>
                      <p className="text-zinc-500 text-xs mb-12 italic">跟著指示呼吸 {state.missionConfig.breathCycles} 次，進行降溫協議</p>
-                     <div className="relative w-44 h-44 mx-auto mb-12 border-4 border-cyan-500/20 rounded-full flex items-center justify-center">
-                        <div className={`transition-all duration-700 rounded-full bg-cyan-400/10 shadow-[0_0_30px_rgba(34,211,238,0.2)] ${breathPhase === 'inhale' ? 'w-40 h-40 bg-cyan-400/30' : breathPhase === 'hold' ? 'w-40 h-40 bg-cyan-100/40' : 'w-12 h-12'}`} />
-                        <span className="absolute text-[12px] font-black text-cyan-400 uppercase tracking-widest">{breathPhase}</span>
+                     <div className="relative w-56 h-56 mx-auto mb-12 border-4 border-cyan-500/10 rounded-full flex items-center justify-center overflow-hidden">
+                        <div 
+                          className={`rounded-full transition-all ease-in-out ${getBreathSize()}`} 
+                          style={{ transitionDuration: getBreathDuration() }} 
+                        />
+                        <span className="absolute text-xl font-black text-white drop-shadow-lg tracking-widest">{getPhaseText(breathPhase)}</span>
                      </div>
                      <div className="flex justify-center gap-3 mb-8">
                        {Array.from({ length: state.missionConfig.breathCycles }).map((_, i) => (
                          <div key={i} className={`w-8 h-2 rounded-full transition-all duration-500 ${breathCount > i ? 'bg-cyan-400 shadow-[0_0_10px_cyan]' : 'bg-zinc-800'}`} />
                        ))}
                      </div>
-                     <button onClick={() => { playSfx('click'); setState(prev => ({ ...prev, sopStep: 3 })); }} disabled={breathCount < state.missionConfig.breathCycles} className="w-full py-4 bg-cyan-600 disabled:opacity-20 text-white rounded-2xl font-black text-lg border-b-6 border-cyan-950 transition-all">確認穩定</button>
+                     <button onClick={() => { playSfx('click'); setState(prev => ({ ...prev, sopStep: 3 })); }} disabled={breathCount < state.missionConfig.breathCycles} className="w-full py-4 bg-cyan-600 disabled:opacity-20 text-white rounded-2xl font-black text-lg border-b-6 border-cyan-950 transition-all shadow-lg active:scale-95">確認穩定</button>
                    </div>
                  )}
 
                  {state.sopStep === 3 && (
                    <div className="w-full h-full flex flex-col animate-in slide-in-from-right">
+                      {/* 情境提醒區 */}
+                      {state.currentCard && (
+                        <div className="bg-zinc-900/80 border border-zinc-800 p-3 rounded-2xl mb-4 flex items-center gap-3 animate-in fade-in duration-500">
+                          <div className="p-2 bg-rose-500/20 rounded-lg border border-rose-500/30">
+                            {React.createElement(ICON_MAP[state.currentCard.icon] || HelpCircle, { className: 'text-rose-400 w-5 h-5' })}
+                          </div>
+                          <div className="flex-1 overflow-hidden">
+                             <span className="text-[10px] text-zinc-500 font-bold block mb-0.5 uppercase tracking-tighter">發生了什麼事？</span>
+                             <span className="text-xs text-white font-black block truncate">{state.currentCard.cn}</span>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex-1 bg-black/50 rounded-[32px] p-6 border border-zinc-800 overflow-y-auto space-y-8 scrollbar-thin shadow-inner">
                          <div>
-                            <label className="text-[10px] text-zinc-500 font-black block mb-4 pl-3 border-l-4 border-amber-500 uppercase tracking-widest">情緒感應回報 / Status Report</label>
+                            <label className="text-[10px] text-zinc-500 font-black block mb-4 pl-3 border-l-4 border-amber-500 uppercase tracking-widest">我現在的感覺 / My Feeling</label>
                             <div className="grid grid-cols-3 gap-3">
                               {EMOTIONS.map(e => (
                                 <button key={e.id} onClick={() => { playSfx('click'); setSopSelection(prev => ({ ...prev, emotion: e.id })); }} 
@@ -560,7 +591,7 @@ const App: React.FC = () => {
                             </div>
                          </div>
                          <div>
-                            <label className="text-[10px] text-zinc-500 font-black block mb-4 pl-3 border-l-4 border-cyan-500 uppercase tracking-widest">修復協議部署 / Execute Protocol</label>
+                            <label className="text-[10px] text-zinc-500 font-black block mb-4 pl-3 border-l-4 border-cyan-500 uppercase tracking-widest">我的行動方案 / My Plan</label>
                             <div className="grid grid-cols-3 gap-3">
                               {NEEDS.map(n => (
                                 <button key={n.id} onClick={() => { playSfx('click'); setSopSelection(prev => ({ ...prev, need: n.id })); }} 
@@ -640,10 +671,10 @@ const App: React.FC = () => {
         @keyframes scan-line { 0% { top: -10%; } 100% { top: 110%; } }
         .animate-scan-line { animation: scan-line 1.5s ease-in-out infinite; }
         .animate-spin-slow { animation: spin 4s linear infinite; }
-        .animate-bounce-short { animation: bounce-short 0.5s ease-out; }
+        .animate-bounce-short { animation: bounce-short 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes bounce-short { 0%, 100% { transform: scale(1.05); } 50% { transform: scale(1.15); } }
-        .shadow-glow-amber { shadow: 0 0 20px rgba(245, 158, 11, 0.4); }
-        .shadow-glow-cyan { shadow: 0 0 20px rgba(34, 211, 238, 0.4); }
+        .shadow-glow-amber { box-shadow: 0 0 25px rgba(245, 158, 11, 0.5); }
+        .shadow-glow-cyan { box-shadow: 0 0 25px rgba(34, 211, 238, 0.5); }
         .perspective-1000 { perspective: 1000px; }
         .preserve-3d { transform-style: preserve-3d; }
         .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
