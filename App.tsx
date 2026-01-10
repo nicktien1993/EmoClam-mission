@@ -7,19 +7,19 @@ import {
   Eraser, Droplets, UserX, MicOff, Utensils, Tv, CloudLightning, HeartCrack, Activity, 
   GlassWater, PenTool, Music, Trash2, ShieldCheck, Loader2, Gauge, Cpu, Wifi, ZapOff, 
   LogOut, Sliders, ToggleLeft, ToggleRight, Check, X, Scan, Hexagon, Hash, ShieldQuestion, 
-  ChevronRight, Terminal, Info, LayoutPanelLeft, Sparkles, AlertCircle as Warning
+  ChevronRight, Terminal, Info, LayoutPanelLeft, Sparkles, AlertCircle as Warning, Lock, MapPin
 } from 'lucide-react';
 import { GameState, Card, LogEntry, MissionConfig, EmotionZone } from './types';
-import { SCHOOL_CARDS, HOME_CARDS, BOSS_CARDS, EMOTIONS, NEEDS } from './constants';
+import { SCHOOL_CARDS, HOME_CARDS, PLAYGROUND_CARDS, BOSS_CARDS, EMOTIONS, NEEDS } from './constants';
 
 const ICON_MAP: Record<string, any> = {
   Rocket, Home, School, Settings, History, RefreshCw, Star, Frown, Flame, AlertTriangle, 
   Cloud, Zap, HelpCircle, LifeBuoy, Heart, Shield, Bed, MessageCircle, Hand, BookOpen, 
   Eraser, Droplets, UserX, MicOff, Utensils, Tv, CloudLightning, HeartCrack, Activity, 
-  GlassWater, PenTool, Music, ZapOff, CheckCircle2, Trophy, Trash2
+  GlassWater, PenTool, Music, ZapOff, CheckCircle2, Trophy, Trash2, MapPin
 };
 
-// --- 進階音訊合成引擎 (沉浸式) ---
+// --- 進階音訊合成引擎 ---
 let sharedAudioCtx: AudioContext | null = null;
 const getAudioCtx = () => {
   try {
@@ -152,6 +152,7 @@ const App: React.FC = () => {
 
   useEffect(() => { return () => clearAllTimers(); }, [clearAllTimers]);
 
+  // Persistent XP sync
   useEffect(() => {
     localStorage.setItem('emotionPilotXP', state.xp.toString());
   }, [state.xp]);
@@ -189,12 +190,17 @@ const App: React.FC = () => {
   const applyConfigAndStart = useCallback(() => {
     playSfx('click');
     setState(prev => {
-      const pool = prev.currentRoute === 'school' ? [...SCHOOL_CARDS] : [...HOME_CARDS];
+      let pool: Card[] = [];
+      if (prev.currentRoute === 'school') pool = [...SCHOOL_CARDS];
+      else if (prev.currentRoute === 'home') pool = [...HOME_CARDS];
+      else if (prev.currentRoute === 'playground') pool = [...PLAYGROUND_CARDS];
+
       let baseDeck = [...pool].sort(() => Math.random() - 0.5);
-      const count = Math.max(1, prev.missionConfig.cardCount);
+      const count = Math.min(10, Math.max(1, prev.missionConfig.cardCount));
       let finalDeck: Card[] = [];
-      if (count === 1) finalDeck = [BOSS_CARDS[Math.floor(Math.random() * BOSS_CARDS.length)]];
-      else {
+      if (count === 1) {
+        finalDeck = [BOSS_CARDS[Math.floor(Math.random() * BOSS_CARDS.length)]];
+      } else {
          const selectedPool = baseDeck.slice(0, count - 1);
          const boss = BOSS_CARDS[Math.floor(Math.random() * BOSS_CARDS.length)];
          finalDeck = [...selectedPool, boss].sort(() => Math.random() - 0.5);
@@ -341,10 +347,10 @@ const App: React.FC = () => {
   };
 
   const getBreathSize = () => {
-    if (breathPhase === 'inhale') return 'w-48 h-48 bg-cyan-400/30';
-    if (breathPhase === 'hold') return 'w-48 h-48 bg-cyan-100/40 shadow-[0_0_50px_rgba(255,255,255,0.4)]';
-    if (breathPhase === 'exhale') return 'w-16 h-16 bg-cyan-400/10';
-    return 'w-16 h-16 bg-cyan-400/5';
+    if (breathPhase === 'inhale') return 'w-64 h-64 bg-cyan-400/30';
+    if (breathPhase === 'hold') return 'w-64 h-64 bg-cyan-100/40 shadow-[0_0_80px_rgba(34,211,238,0.6)]';
+    if (breathPhase === 'exhale') return 'w-20 h-20 bg-cyan-400/10';
+    return 'w-20 h-20 bg-cyan-400/5';
   };
 
   const getBreathDuration = () => {
@@ -354,16 +360,6 @@ const App: React.FC = () => {
     return '0.8s';
   };
 
-  const getPhaseText = (phase: string) => {
-    switch(phase) {
-      case 'inhale': return '吸氣...';
-      case 'hold': return '憋住...';
-      case 'exhale': return '吐氣...';
-      case 'ready': return '準備';
-      default: return '完成';
-    }
-  };
-
   return (
     <div className="fixed inset-0 flex items-center justify-center p-2 bg-zinc-950 scanlines overflow-hidden font-sans select-none" onContextMenu={(e) => e.preventDefault()}>
       <div className="absolute inset-0 opacity-10 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
@@ -371,7 +367,7 @@ const App: React.FC = () => {
         {/* Header */}
         <div className="flex justify-between items-center bg-zinc-900/95 border-b-2 border-zinc-800 p-3 relative z-50 h-16">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-400 flex items-center justify-center glow-cyan">
+            <div className="w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-400 flex items-center justify-center glow-cyan shadow-[0_0_15px_rgba(34,211,238,0.5)]">
               <LayoutPanelLeft className="text-cyan-400 w-5 h-5" />
             </div>
             <div className="hidden sm:block">
@@ -411,16 +407,39 @@ const App: React.FC = () => {
           )}
 
           {state.status === 'routing' && (
-            <div className="flex-1 flex flex-col items-center justify-center animate-in zoom-in">
-              <h2 className="text-2xl font-header text-cyan-400 uppercase tracking-widest mb-10 text-center">目標磁區 / Target Sector</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-2xl px-4">
-                <button onClick={() => { playSfx('click'); setState(prev => ({ ...prev, currentRoute: 'school', status: 'ready' })); }} className="p-8 bg-zinc-800/40 border-2 border-emerald-500/30 hover:border-emerald-400 rounded-[32px] group transition-all text-center border-b-8 border-emerald-950">
-                  <School className="w-16 h-16 mx-auto mb-4 text-emerald-400 group-hover:scale-110" />
-                  <h3 className="text-xl font-black text-white uppercase">學校區</h3>
+            <div className="flex-1 flex flex-col items-center justify-center animate-in zoom-in h-full overflow-y-auto">
+              <h2 className="text-2xl font-header text-cyan-400 uppercase tracking-widest mb-4 text-center">目標磁區 / Target Sector</h2>
+              <div className="mb-8 flex flex-col items-center">
+                 <div className="w-full max-w-xs bg-zinc-800/50 h-2 rounded-full overflow-hidden border border-zinc-700">
+                    <div className="h-full bg-amber-500 shadow-[0_0_10px_amber]" style={{ width: `${Math.min(100, (state.xp / 300) * 100)}%` }} />
+                 </div>
+                 <span className="text-[10px] font-mono-tech text-zinc-500 mt-2 uppercase">XP Milestone: {state.xp}/300</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-4xl px-4">
+                <button onClick={() => { playSfx('click'); setState(prev => ({ ...prev, currentRoute: 'school', status: 'ready' })); }} className="p-6 bg-zinc-800/40 border-2 border-emerald-500/30 hover:border-emerald-400 rounded-[32px] group transition-all text-center border-b-8 border-emerald-950">
+                  <School className="w-12 h-12 mx-auto mb-4 text-emerald-400 group-hover:scale-110" />
+                  <h3 className="text-lg font-black text-white uppercase">學校區</h3>
                 </button>
-                <button onClick={() => { playSfx('click'); setState(prev => ({ ...prev, currentRoute: 'home', status: 'ready' })); }} className="p-8 bg-zinc-800/40 border-2 border-amber-500/30 hover:border-amber-400 rounded-[32px] group transition-all text-center border-b-8 border-amber-950">
-                  <Home className="w-16 h-16 mx-auto mb-4 text-amber-400 group-hover:scale-110" />
-                  <h3 className="text-xl font-black text-white uppercase">家裡區</h3>
+                <button onClick={() => { playSfx('click'); setState(prev => ({ ...prev, currentRoute: 'home', status: 'ready' })); }} className="p-6 bg-zinc-800/40 border-2 border-amber-500/30 hover:border-amber-400 rounded-[32px] group transition-all text-center border-b-8 border-amber-950">
+                  <Home className="w-12 h-12 mx-auto mb-4 text-amber-400 group-hover:scale-110" />
+                  <h3 className="text-lg font-black text-white uppercase">家裡區</h3>
+                </button>
+                
+                {/* 操場區 - 需要 300 XP */}
+                <button 
+                  disabled={state.xp < 300}
+                  onClick={() => { playSfx('click'); setState(prev => ({ ...prev, currentRoute: 'playground', status: 'ready' })); }} 
+                  className={`p-6 bg-zinc-800/40 border-2 rounded-[32px] group transition-all text-center border-b-8 relative overflow-hidden ${state.xp >= 300 ? 'border-cyan-500/30 hover:border-cyan-400 border-b-cyan-950' : 'border-zinc-800 border-b-black opacity-50'}`}
+                >
+                  {state.xp < 300 && (
+                    <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[2px] z-10">
+                      <Lock className="text-zinc-600 mb-1" size={24} />
+                      <span className="text-[10px] font-black text-zinc-500 uppercase">300 XP REQUIRED</span>
+                    </div>
+                  )}
+                  <MapPin className={`w-12 h-12 mx-auto mb-4 ${state.xp >= 300 ? 'text-cyan-400 group-hover:scale-110' : 'text-zinc-700'}`} />
+                  <h3 className="text-lg font-black text-white uppercase">操場區</h3>
                 </button>
               </div>
             </div>
@@ -491,7 +510,7 @@ const App: React.FC = () => {
                   </div>
 
                   {isFlipped && !isScanning && (
-                    <div className="flex gap-6 w-full max-w-md px-4 animate-in slide-in-from-bottom">
+                    <div className="flex gap-6 w-full max-md px-4 animate-in slide-in-from-bottom">
                       <button onClick={() => handleDecision('開心')} className="flex-1 py-5 bg-emerald-600/10 border-2 border-emerald-500 text-emerald-400 rounded-2xl font-black text-xl hover:bg-emerald-600/20 active:translate-y-1 transition-all shadow-lg">開心</button>
                       <button onClick={() => handleDecision('不開心')} className="flex-1 py-5 bg-rose-600/10 border-2 border-rose-500 text-rose-400 rounded-2xl font-black text-xl hover:bg-rose-600/20 active:translate-y-1 transition-all shadow-lg">不開心</button>
                     </div>
@@ -546,12 +565,11 @@ const App: React.FC = () => {
                    <div className="text-center w-full max-w-sm animate-in slide-in-from-right">
                      <h3 className="text-2xl font-black text-white mb-2 tracking-widest uppercase">熱能冷卻 / Cool Down</h3>
                      <p className="text-zinc-500 text-xs mb-12 italic">跟著指示呼吸 {state.missionConfig.breathCycles} 次，進行降溫協議</p>
-                     <div className="relative w-56 h-56 mx-auto mb-12 border-4 border-cyan-500/10 rounded-full flex items-center justify-center overflow-hidden">
+                     <div className="relative w-72 h-72 mx-auto mb-12 border-4 border-cyan-500/10 rounded-full flex items-center justify-center overflow-hidden">
                         <div 
                           className={`rounded-full transition-all ease-in-out ${getBreathSize()}`} 
                           style={{ transitionDuration: getBreathDuration() }} 
                         />
-                        <span className="absolute text-xl font-black text-white drop-shadow-lg tracking-widest">{getPhaseText(breathPhase)}</span>
                      </div>
                      <div className="flex justify-center gap-3 mb-8">
                        {Array.from({ length: state.missionConfig.breathCycles }).map((_, i) => (
@@ -579,7 +597,7 @@ const App: React.FC = () => {
 
                       <div className="flex-1 bg-black/50 rounded-[32px] p-6 border border-zinc-800 overflow-y-auto space-y-8 scrollbar-thin shadow-inner">
                          <div>
-                            <label className="text-[10px] text-zinc-500 font-black block mb-4 pl-3 border-l-4 border-amber-500 uppercase tracking-widest">我現在的感覺 / My Feeling</label>
+                            <label className="text-[10px] text-zinc-500 font-black block mb-4 pl-3 border-l-4 border-amber-500 uppercase tracking-widest">我現在的心情 / My Mood</label>
                             <div className="grid grid-cols-3 gap-3">
                               {EMOTIONS.map(e => (
                                 <button key={e.id} onClick={() => { playSfx('click'); setSopSelection(prev => ({ ...prev, emotion: e.id })); }} 
@@ -591,7 +609,7 @@ const App: React.FC = () => {
                             </div>
                          </div>
                          <div>
-                            <label className="text-[10px] text-zinc-500 font-black block mb-4 pl-3 border-l-4 border-cyan-500 uppercase tracking-widest">我的行動方案 / My Plan</label>
+                            <label className="text-[10px] text-zinc-500 font-black block mb-4 pl-3 border-l-4 border-cyan-500 uppercase tracking-widest">我的行動計畫 / My Action Plan</label>
                             <div className="grid grid-cols-3 gap-3">
                               {NEEDS.map(n => (
                                 <button key={n.id} onClick={() => { playSfx('click'); setSopSelection(prev => ({ ...prev, need: n.id })); }} 
@@ -640,7 +658,7 @@ const App: React.FC = () => {
               <div className="space-y-8 bg-zinc-900/50 p-8 rounded-[40px] border border-zinc-800">
                 <div className="space-y-4">
                    <div className="flex justify-between items-center"><label className="text-sm text-zinc-400 uppercase font-black">任務單元數量</label><span className="text-cyan-400 font-mono-tech font-bold text-xl">{state.missionConfig.cardCount}</span></div>
-                   <input type="range" min="1" max="15" step="1" value={state.missionConfig.cardCount} onChange={e => updateConfig('cardCount', parseInt(e.target.value))} className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+                   <input type="range" min="1" max="10" step="1" value={state.missionConfig.cardCount} onChange={e => updateConfig('cardCount', parseInt(e.target.value))} className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
                 </div>
                 <button onClick={resetGame} className="w-full py-5 bg-rose-950/20 border-2 border-rose-900/40 text-rose-500 rounded-3xl font-black text-lg flex items-center justify-center gap-3 active:translate-y-1 border-b-6 border-rose-950"><Trash2 /> 數據抹除歸零</button>
               </div>
@@ -673,8 +691,8 @@ const App: React.FC = () => {
         .animate-spin-slow { animation: spin 4s linear infinite; }
         .animate-bounce-short { animation: bounce-short 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes bounce-short { 0%, 100% { transform: scale(1.05); } 50% { transform: scale(1.15); } }
-        .shadow-glow-amber { box-shadow: 0 0 25px rgba(245, 158, 11, 0.5); }
-        .shadow-glow-cyan { box-shadow: 0 0 25px rgba(34, 211, 238, 0.5); }
+        .shadow-glow-amber { box-shadow: 0 0 25px rgba(245, 158, 11, 0.6); }
+        .shadow-glow-cyan { box-shadow: 0 0 25px rgba(34, 211, 238, 0.6); }
         .perspective-1000 { perspective: 1000px; }
         .preserve-3d { transform-style: preserve-3d; }
         .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
