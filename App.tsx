@@ -214,17 +214,6 @@ const App: React.FC = () => {
     });
   }, []);
 
-  const startScanningCard = useCallback(() => {
-    if (isFlipped || isScanning) return;
-    setIsScanning(true); 
-    playSfx('scan');
-    scanTimerRef.current = window.setTimeout(() => { 
-      setIsScanning(false); 
-      setIsFlipped(true); 
-      playSfx('correct'); 
-    }, 1000);
-  }, [isFlipped, isScanning]);
-
   const pickCard = useCallback((cardIndex: number) => {
     if (isDrawing || state.status !== 'picking') return;
     
@@ -235,39 +224,48 @@ const App: React.FC = () => {
     setIsDrawing(true);
     setSelectedCardIdx(cardIndex);
 
+    // 第一階段：移動到中央並啟動掃描動畫
     drawTimerRef.current = window.setTimeout(() => {
-      setState(prev => {
-        // 安全檢查，避免索引溢出
-        const realCard = prev.deck[cardIndex];
-        if (!realCard) return { ...prev, status: 'routing' };
-        
-        const newDeck = prev.deck.filter((_, i) => i !== cardIndex);
-        return { 
-          ...prev, 
-          currentCard: realCard, 
-          deck: newDeck, 
-          round: prev.round + 1, 
-          status: 'playing' 
-        };
-      });
-      setIsDrawing(false);
-      setIsFlipped(false);
-      setSelectedCardIdx(null);
-    }, 800);
-  }, [isDrawing, state.deck, state.status]);
+      setIsScanning(true);
+      playSfx('scan');
 
-  // 自動觸發掃描：進入 playing 狀態時立即掃描
-  useEffect(() => {
-    if (state.status === 'playing' && state.currentCard && !isFlipped && !isScanning) {
-      startScanningCard();
-    }
-  }, [state.status, state.currentCard, isFlipped, isScanning, startScanningCard]);
+      // 第二階段：掃描中...
+      scanTimerRef.current = window.setTimeout(() => {
+        setIsScanning(false);
+        setIsFlipped(true);
+        playSfx('correct');
+
+        // 第三階段：翻牌後延遲一下切換至 playing 狀態（顯示按鈕）
+        window.setTimeout(() => {
+          setState(prev => {
+            const realCard = prev.deck[cardIndex];
+            if (!realCard) return { ...prev, status: 'routing' };
+            const newDeck = prev.deck.filter((_, i) => i !== cardIndex);
+            return { 
+              ...prev, 
+              currentCard: realCard, 
+              deck: newDeck, 
+              round: prev.round + 1, 
+              status: 'playing' 
+            };
+          });
+          setIsDrawing(false);
+          setSelectedCardIdx(null);
+        }, 300);
+
+      }, 1000);
+    }, 700);
+  }, [isDrawing, state.deck, state.status]);
 
   const nextTurn = useCallback(() => {
     setState(prev => {
       if (prev.deck.length === 0) return { ...prev, status: 'result' };
       return { ...prev, status: 'picking' };
     });
+    setIsFlipped(false);
+    setIsScanning(false);
+    setIsDrawing(false);
+    setSelectedCardIdx(null);
   }, []);
 
   const triggerSOP = useCallback(() => {
@@ -380,10 +378,10 @@ const App: React.FC = () => {
   };
 
   const getBreathSize = () => {
-    if (breathPhase === 'inhale') return 'w-[180px] h-[180px] sm:w-[220px] sm:h-[220px] bg-cyan-300 shadow-[0_0_80px_rgba(34,211,238,0.8)]';
-    if (breathPhase === 'hold') return 'w-[180px] h-[180px] sm:w-[220px] sm:h-[220px] bg-white shadow-[0_0_100px_rgba(255,255,255,0.9)] scale-105';
-    if (breathPhase === 'exhale') return 'w-[40px] h-[40px] bg-cyan-400/40 shadow-[0_0_20px_rgba(34,211,238,0.3)]';
-    return 'w-[40px] h-[40px] bg-cyan-400/20';
+    if (breathPhase === 'inhale') return 'w-[160px] h-[160px] sm:w-[200px] sm:h-[200px] bg-cyan-300 shadow-[0_0_80px_rgba(34,211,238,0.8)]';
+    if (breathPhase === 'hold') return 'w-[160px] h-[160px] sm:w-[200px] sm:h-[200px] bg-white shadow-[0_0_100px_rgba(255,255,255,0.9)] scale-105';
+    if (breathPhase === 'exhale') return 'w-[30px] h-[30px] bg-cyan-400/40 shadow-[0_0_20px_rgba(34,211,238,0.3)]';
+    return 'w-[30px] h-[30px] bg-cyan-400/20';
   };
 
   const getBreathDuration = () => {
@@ -405,7 +403,7 @@ const App: React.FC = () => {
             </div>
             <div className="hidden sm:block">
               <h1 className="font-header text-xs sm:text-sm tracking-widest text-white uppercase leading-none">CORE NAVIGATOR</h1>
-              <p className="text-[8px] text-zinc-500 font-mono-tech tracking-tighter uppercase mt-0.5">V9.0.2 STABLE</p>
+              <p className="text-[8px] text-zinc-500 font-mono-tech tracking-tighter uppercase mt-0.5">V9.0.3 STABLE</p>
             </div>
           </div>
           <div className="flex gap-4 font-mono-tech">
@@ -490,80 +488,92 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {state.status === 'picking' && (
+          {(state.status === 'picking' || state.status === 'playing') && (
             <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in overflow-hidden relative">
-              <div className={`mb-8 sm:mb-12 text-center transition-opacity duration-500 ${selectedCardIdx !== null ? 'opacity-0' : 'opacity-100'} shrink-0`}>
+              {/* Picking UI */}
+              <div className={`absolute top-0 w-full text-center transition-opacity duration-500 ${selectedCardIdx !== null || state.status === 'playing' ? 'opacity-0 pointer-events-none' : 'opacity-100'} shrink-0 pt-10`}>
                 <h2 className="text-xl sm:text-2xl font-header text-white mb-1 uppercase tracking-[0.3em] animate-pulse">單元提取 / Pull</h2>
                 <div className="text-[10px] font-mono-tech text-cyan-500 uppercase tracking-widest">Select an encrypted data packet</div>
               </div>
-              <div className="relative w-full max-w-4xl h-64 sm:h-72 flex items-center justify-center perspective-1000">
-                {state.deck.map((card, idx) => {
+
+              {/* Card Container (Fan and Playing Card integrated) */}
+              <div className="relative w-full max-w-4xl h-72 sm:h-[400px] flex items-center justify-center perspective-1000">
+                {/* 只有在狀態為 picking 或者正在播放動畫時才顯示卡堆 */}
+                {(state.status === 'picking' || isDrawing) && state.deck.map((card, idx) => {
                   const isSelected = selectedCardIdx === idx;
                   const isAnySelected = selectedCardIdx !== null;
                   
                   const angle = (idx - (state.deck.length - 1) / 2) * 8;
-                  const xOffset = (idx - (state.deck.length - 1) / 2) * (window.innerWidth < 640 ? 35 : 45);
+                  const xOffset = (idx - (state.deck.length - 1) / 2) * (window.innerWidth < 640 ? 30 : 45);
                   
                   let transform = `translateX(${xOffset}px) rotate(${angle}deg)`;
                   let zIndex = idx;
                   let opacity = 1;
                   
                   if (isSelected) {
-                    transform = `translate(0, ${window.innerWidth < 640 ? '-100px' : '-120px'}) scale(${window.innerWidth < 640 ? 1.5 : 1.8}) rotate(0deg)`;
-                    zIndex = 100;
+                    // 移動到中央並縮放
+                    transform = `translate(0, ${window.innerWidth < 640 ? '-30px' : '-40px'}) scale(${window.innerWidth < 640 ? 1.6 : 1.9}) rotate(${isFlipped ? '180deg' : '0deg'})`;
+                    zIndex = 1000;
                   } else if (isAnySelected) {
                     opacity = 0;
-                    transform = `translateX(${xOffset}px) translateY(150px) rotate(${angle}deg)`;
+                    transform = `translateX(${xOffset}px) translateY(200px) rotate(${angle}deg)`;
                   }
 
                   return (
                     <div 
                       key={card.id || idx} 
                       onClick={() => pickCard(idx)} 
-                      style={{ transform, zIndex, opacity }}
-                      className={`absolute bottom-0 w-28 h-40 sm:w-32 sm:h-48 bg-zinc-900 border-2 border-cyan-500/30 rounded-2xl cursor-pointer transition-all duration-700 ease-in-out shadow-[0_10px_30px_rgba(0,0,0,0.5)] overflow-hidden group hover:border-cyan-400 ${isSelected ? 'ring-2 ring-cyan-400 shadow-[0_0_60px_rgba(34,211,238,0.6)]' : ''}`}
+                      style={{ transform, zIndex, opacity, transformStyle: 'preserve-3d' }}
+                      className={`absolute bottom-0 w-28 h-40 sm:w-32 sm:h-48 transition-all duration-700 ease-out shadow-[0_10px_30px_rgba(0,0,0,0.5)] cursor-pointer rounded-2xl overflow-hidden ${isSelected ? 'ring-2 ring-cyan-400' : 'bg-zinc-900 border-2 border-cyan-500/20'}`}
                     >
-                      <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
-                      <div className="absolute inset-2 border border-cyan-500/5 rounded-xl flex items-center justify-center">
-                        <Cpu size={28} className={`transition-colors ${isSelected ? 'text-cyan-400' : 'text-zinc-800'}`} />
+                      {/* Card Back (Scanning view) */}
+                      <div className="absolute inset-0 bg-zinc-900 flex flex-col items-center justify-center backface-hidden border-2 border-zinc-800 rounded-2xl">
+                         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20" />
+                         <Scan className={`w-10 h-10 sm:w-12 sm:h-12 ${isSelected && isScanning ? 'text-cyan-400 animate-pulse' : 'text-zinc-800'}`} />
+                         {isSelected && isScanning && <div className="absolute top-0 left-0 w-full h-1 bg-cyan-400 animate-scan-line shadow-[0_0_15px_cyan]" />}
                       </div>
-                      <div className="absolute bottom-2 left-0 w-full text-center text-[8px] font-mono-tech text-zinc-700 uppercase">PKT_{idx.toString().padStart(2,'0')}</div>
+
+                      {/* Card Front (Decoded content) */}
+                      {isSelected && (
+                        <div className={`absolute inset-0 bg-gradient-to-br ${card.type === '開心' ? 'from-emerald-950 to-zinc-950' : 'from-rose-950 to-zinc-950'} flex flex-col p-4 [transform:rotateY(180deg)] backface-hidden rounded-2xl border-2 ${card.type === '開心' ? 'border-emerald-500/40' : 'border-rose-500/40'}`}>
+                           <div className="flex-1 flex flex-col items-center justify-center text-center gap-3">
+                              <div className={`p-4 bg-zinc-900/60 rounded-full border ${card.type === '開心' ? 'border-emerald-500/30' : 'border-rose-500/30'}`}>
+                                 {React.createElement(ICON_MAP[card.icon] || Rocket, { className: `w-8 h-8 ${card.type === '開心' ? 'text-emerald-400' : 'text-rose-400'}` })}
+                              </div>
+                              <h3 className="text-[10px] sm:text-xs font-black text-white leading-tight px-1">{card.cn}</h3>
+                           </div>
+                           <div className={`text-center font-mono-tech text-[8px] ${card.type === '開心' ? 'text-emerald-500' : 'text-rose-500'} tracking-widest uppercase`}>{card.type === '開心' ? 'POSITIVE' : 'STRESS'}</div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
-              </div>
-            </div>
-          )}
 
-          {state.status === 'playing' && (
-            <div className="flex-1 flex flex-col items-center justify-center gap-4 sm:gap-10 py-2">
-              {state.currentCard && (
-                <div className="w-full flex flex-col items-center gap-4 sm:gap-8 animate-in zoom-in h-full">
-                  <div className={`relative w-[220px] h-[320px] sm:w-[280px] sm:h-[400px] transition-all duration-700 preserve-3d shrink-0 ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}>
-                    <div className="absolute inset-0 bg-gradient-to-br from-zinc-800 to-zinc-950 border-4 border-zinc-800 rounded-[32px] flex flex-col items-center justify-center backface-hidden shadow-2xl overflow-hidden">
-                       <Scan className={`w-14 h-14 ${isScanning ? 'text-cyan-400 animate-pulse' : 'text-zinc-700'}`} />
-                       <div className="mt-4 font-header tracking-widest text-[10px] text-zinc-600 uppercase">System Scanning...</div>
-                       {isScanning && <div className="absolute top-0 left-0 w-full h-1 bg-cyan-400 animate-scan-line shadow-[0_0_15px_cyan]" />}
+                {/* Final Playing Card (After transition is done) */}
+                {state.status === 'playing' && state.currentCard && !isDrawing && (
+                  <div className="flex flex-col items-center gap-8 animate-in zoom-in">
+                    <div className={`relative w-[220px] h-[320px] sm:w-[280px] sm:h-[400px] transition-all duration-700 preserve-3d shrink-0 ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}>
+                      <div className="absolute inset-0 bg-gradient-to-br from-zinc-800 to-zinc-950 border-4 border-zinc-800 rounded-[32px] flex flex-col items-center justify-center backface-hidden shadow-2xl overflow-hidden">
+                         <Scan className="w-14 h-14 text-zinc-700" />
+                      </div>
+                      <div className={`absolute inset-0 bg-gradient-to-br ${state.currentCard.type === '開心' ? 'from-emerald-950/90 to-zinc-950' : 'from-rose-950/90 to-zinc-950'} border-4 ${state.currentCard.type === '開心' ? 'border-emerald-500/50 shadow-emerald-500/20' : 'border-rose-500/50 shadow-rose-500/20'} rounded-[32px] flex flex-col p-5 [transform:rotateY(180deg)] backface-hidden shadow-2xl`}>
+                         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center gap-4 sm:gap-6">
+                            <div className={`p-6 sm:p-8 bg-zinc-900/80 rounded-full border-2 ${state.currentCard.type === '開心' ? 'border-emerald-500/30' : 'border-rose-500/30'} backdrop-blur-sm shadow-inner shrink-0`}>
+                               {React.createElement(ICON_MAP[state.currentCard.icon] || Rocket, { className: `w-10 h-10 sm:w-14 sm:h-14 ${state.currentCard.type === '開心' ? 'text-emerald-400' : 'text-rose-400'}` })}
+                            </div>
+                            <h3 className="text-md sm:text-xl font-black text-white leading-relaxed line-clamp-4">{state.currentCard.cn}</h3>
+                         </div>
+                         <div className={`relative z-10 text-center font-mono-tech text-[9px] ${state.currentCard.type === '開心' ? 'text-emerald-500' : 'text-rose-500'} tracking-widest uppercase`}>{state.currentCard.type === '開心' ? 'POSITIVE' : 'STRESS'}</div>
+                      </div>
                     </div>
-                    <div className={`absolute inset-0 bg-gradient-to-br ${state.currentCard.type === '開心' ? 'from-emerald-950/90 to-zinc-950' : 'from-rose-950/90 to-zinc-950'} border-4 ${state.currentCard.type === '開心' ? 'border-emerald-500/50 shadow-emerald-500/20' : 'border-rose-500/50 shadow-rose-500/20'} rounded-[32px] flex flex-col p-5 [transform:rotateY(180deg)] backface-hidden shadow-2xl`}>
-                       <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center gap-4 sm:gap-6">
-                          <div className={`p-6 sm:p-8 bg-zinc-900/80 rounded-full border-2 ${state.currentCard.type === '開心' ? 'border-emerald-500/30' : 'border-rose-500/30'} backdrop-blur-sm shadow-inner shrink-0`}>
-                             {React.createElement(ICON_MAP[state.currentCard.icon] || Rocket, { className: `w-10 h-10 sm:w-14 sm:h-14 ${state.currentCard.type === '開心' ? 'text-emerald-400' : 'text-rose-400'}` })}
-                          </div>
-                          <h3 className="text-md sm:text-xl font-black text-white leading-relaxed line-clamp-4">{state.currentCard.cn}</h3>
-                       </div>
-                       <div className={`relative z-10 text-center font-mono-tech text-[9px] ${state.currentCard.type === '開心' ? 'text-emerald-500' : 'text-rose-500'} tracking-widest uppercase`}>{state.currentCard.type === '開心' ? 'POSITIVE' : 'STRESS'}</div>
-                    </div>
-                  </div>
-
-                  {isFlipped && !isScanning && (
+                    
                     <div className="flex gap-4 w-full max-w-[300px] sm:max-w-md px-2 animate-in slide-in-from-bottom shrink-0">
                       <button onClick={() => handleDecision('開心')} className="flex-1 py-4 bg-emerald-600/10 border-2 border-emerald-500 text-emerald-400 rounded-2xl font-black text-lg sm:text-xl active:scale-95 transition-all shadow-lg">開心</button>
                       <button onClick={() => handleDecision('不開心')} className="flex-1 py-4 bg-rose-600/10 border-2 border-rose-500 text-rose-400 rounded-2xl font-black text-lg sm:text-xl active:scale-95 transition-all shadow-lg">不開心</button>
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -612,7 +622,7 @@ const App: React.FC = () => {
                    {state.sopStep === 2 && (
                      <div className="text-center w-full max-sm animate-in slide-in-from-right flex flex-col items-center shrink-0">
                        <h3 className="text-lg sm:text-xl font-black text-white mb-1 tracking-widest uppercase shrink-0">熱能冷卻</h3>
-                       <p className="text-zinc-500 text-[9px] sm:text-[10px] mb-4 sm:mb-6 italic uppercase shrink-0">Breathing cycles: {breathCount}/{state.missionConfig.breathCycles}</p>
+                       <p className="text-zinc-500 text-[9px] sm:text-[10px] mb-4 sm:mb-6 italic uppercase shrink-0">Breathing: {breathCount}/{state.missionConfig.breathCycles}</p>
                        
                        <div className="relative w-48 h-48 sm:w-60 sm:h-60 border-2 sm:border-4 border-cyan-500/10 rounded-full flex items-center justify-center mb-6 shrink-0 max-h-[40vh]">
                           <div 
