@@ -135,12 +135,7 @@ const App: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  const pressureTimerRef = useRef<number | null>(null);
-  const decayTimerRef = useRef<number | null>(null);
-  const breathTimerRef = useRef<number | null>(null);
-  const drawTimerRef = useRef<number | null>(null);
-  const scanTimerRef = useRef<number | null>(null);
-  
+  const timers = useRef<number[]>([]);
   const [pressure, setPressure] = useState(0);
   const [isPressing, setIsPressing] = useState(false);
   const [isDecompressing, setIsDecompressing] = useState(false);
@@ -149,11 +144,9 @@ const App: React.FC = () => {
   const [breathCount, setBreathCount] = useState(0);
 
   const clearAllTimers = useCallback(() => {
-    if (pressureTimerRef.current) { clearInterval(pressureTimerRef.current); pressureTimerRef.current = null; }
-    if (decayTimerRef.current) { clearInterval(decayTimerRef.current); decayTimerRef.current = null; }
-    if (breathTimerRef.current) { clearTimeout(breathTimerRef.current); breathTimerRef.current = null; }
-    if (drawTimerRef.current) { clearTimeout(drawTimerRef.current); drawTimerRef.current = null; }
-    if (scanTimerRef.current) { clearTimeout(scanTimerRef.current); scanTimerRef.current = null; }
+    timers.current.forEach(t => clearTimeout(t));
+    timers.current.forEach(t => clearInterval(t));
+    timers.current = [];
   }, []);
 
   useEffect(() => { return () => clearAllTimers(); }, [clearAllTimers]);
@@ -223,27 +216,29 @@ const App: React.FC = () => {
     playSfx('draw');
     setIsDrawing(true);
     setSelectedCardIdx(cardIndex);
+    setIsFlipped(false);
+    setIsScanning(false);
 
-    // 第一階段：移動到中央並啟動掃描動畫
-    drawTimerRef.current = window.setTimeout(() => {
+    // 1. 移動動畫延遲 (700ms)
+    const moveTimer = window.setTimeout(() => {
       setIsScanning(true);
       playSfx('scan');
 
-      // 第二階段：掃描中...
-      scanTimerRef.current = window.setTimeout(() => {
+      // 2. 掃描解碼 (1000ms)
+      const scanTimer = window.setTimeout(() => {
         setIsScanning(false);
         setIsFlipped(true);
         playSfx('correct');
 
-        // 第三階段：翻牌後延遲一下切換至 playing 狀態（顯示按鈕）
-        window.setTimeout(() => {
+        // 3. 翻牌後自動進入互動階段 (300ms)
+        const transitionTimer = window.setTimeout(() => {
           setState(prev => {
-            const realCard = prev.deck[cardIndex];
-            if (!realCard) return { ...prev, status: 'routing' };
+            const finalCard = prev.deck[cardIndex];
+            if (!finalCard) return { ...prev, status: 'routing' };
             const newDeck = prev.deck.filter((_, i) => i !== cardIndex);
             return { 
               ...prev, 
-              currentCard: realCard, 
+              currentCard: finalCard, 
               deck: newDeck, 
               round: prev.round + 1, 
               status: 'playing' 
@@ -251,13 +246,16 @@ const App: React.FC = () => {
           });
           setIsDrawing(false);
           setSelectedCardIdx(null);
-        }, 300);
-
+        }, 500);
+        timers.current.push(transitionTimer);
       }, 1000);
+      timers.current.push(scanTimer);
     }, 700);
+    timers.current.push(moveTimer);
   }, [isDrawing, state.deck, state.status]);
 
   const nextTurn = useCallback(() => {
+    clearAllTimers();
     setState(prev => {
       if (prev.deck.length === 0) return { ...prev, status: 'result' };
       return { ...prev, status: 'picking' };
@@ -266,7 +264,7 @@ const App: React.FC = () => {
     setIsScanning(false);
     setIsDrawing(false);
     setSelectedCardIdx(null);
-  }, []);
+  }, [clearAllTimers]);
 
   const triggerSOP = useCallback(() => {
     let startStep = 1;
@@ -303,35 +301,33 @@ const App: React.FC = () => {
     e.preventDefault();
     if (pressure >= 100 || isDecompressing) return;
     setIsPressing(true);
-    if (decayTimerRef.current) { clearInterval(decayTimerRef.current); decayTimerRef.current = null; }
     const increment = 100 / (state.missionConfig.pressureDuration * 25);
     playSfx('pressure', state.missionConfig.pressureDuration);
-    pressureTimerRef.current = window.setInterval(() => {
+    const pTimer = window.setInterval(() => {
       setPressure(p => {
-        if (p >= 100) { if (pressureTimerRef.current) clearInterval(pressureTimerRef.current); pressureTimerRef.current = null; return 100; }
+        if (p >= 100) { clearInterval(pTimer); return 100; }
         return p + increment;
       });
     }, 40);
+    timers.current.push(pTimer);
   };
 
   const stopPressure = () => {
     setIsPressing(false);
-    if (pressureTimerRef.current) { clearInterval(pressureTimerRef.current); pressureTimerRef.current = null; }
-    if (pressure > 0 && pressure < 100) {
-      decayTimerRef.current = window.setInterval(() => {
-        setPressure(p => {
-          if (p <= 0) { if (decayTimerRef.current) clearInterval(decayTimerRef.current); decayTimerRef.current = null; return 0; }
-          return p - 3;
-        });
-      }, 40);
-    }
+    const decayTimer = window.setInterval(() => {
+      setPressure(p => {
+        if (p <= 0) { clearInterval(decayTimer); return 0; }
+        return p - 3;
+      });
+    }, 40);
+    timers.current.push(decayTimer);
   };
 
   const handlePressureDone = () => {
     if (pressure >= 100) {
       playSfx('click');
       setIsDecompressing(true); playSfx('hiss');
-      setTimeout(() => {
+      const decompressionTimer = window.setTimeout(() => {
         setIsDecompressing(false);
         let nextStep = 2;
         if (!state.missionConfig.enableBreath) {
@@ -341,6 +337,7 @@ const App: React.FC = () => {
         setState(prev => ({ ...prev, sopStep: nextStep }));
         setPressure(0); setBreathCount(0); setBreathPhase('ready');
       }, 2000);
+      timers.current.push(decompressionTimer);
     }
   };
 
@@ -348,11 +345,12 @@ const App: React.FC = () => {
     if (state.status === 'sop' && state.sopStep === 2 && breathCount < state.missionConfig.breathCycles) {
       const config = state.missionConfig;
       if (breathPhase === 'ready') {
-         breathTimerRef.current = window.setTimeout(() => { setBreathPhase('inhale'); playSfx('inhale', config.inhaleTime); }, 800);
+         const t = window.setTimeout(() => { setBreathPhase('inhale'); playSfx('inhale', config.inhaleTime); }, 800);
+         timers.current.push(t);
          return;
       }
       const durations = { ready: 800, inhale: config.inhaleTime * 1000, hold: config.holdTime * 1000, exhale: config.exhaleTime * 1000, done: 0 };
-      breathTimerRef.current = window.setTimeout(() => {
+      const bt = window.setTimeout(() => {
         setBreathPhase(current => {
           if (current === 'inhale') return 'hold';
           if (current === 'hold') { playSfx('exhale', config.exhaleTime); return 'exhale'; }
@@ -365,7 +363,8 @@ const App: React.FC = () => {
           return current;
         });
       }, durations[breathPhase as keyof typeof durations] || 1000);
-      return () => { if (breathTimerRef.current) window.clearTimeout(breathTimerRef.current); };
+      timers.current.push(bt);
+      return () => { clearTimeout(bt); };
     }
   }, [state.status, state.sopStep, breathPhase, breathCount, state.missionConfig]);
 
@@ -384,10 +383,12 @@ const App: React.FC = () => {
     return 'w-[30px] h-[30px] bg-cyan-400/20';
   };
 
+  // --- Fix: Added missing getBreathDuration function ---
   const getBreathDuration = () => {
-    if (breathPhase === 'inhale') return `${state.missionConfig.inhaleTime}s`;
-    if (breathPhase === 'hold') return `${state.missionConfig.holdTime}s`;
-    if (breathPhase === 'exhale') return `${state.missionConfig.exhaleTime}s`;
+    const config = state.missionConfig;
+    if (breathPhase === 'inhale') return `${config.inhaleTime}s`;
+    if (breathPhase === 'hold') return `${config.holdTime}s`;
+    if (breathPhase === 'exhale') return `${config.exhaleTime}s`;
     return '0.8s';
   };
 
@@ -403,7 +404,7 @@ const App: React.FC = () => {
             </div>
             <div className="hidden sm:block">
               <h1 className="font-header text-xs sm:text-sm tracking-widest text-white uppercase leading-none">CORE NAVIGATOR</h1>
-              <p className="text-[8px] text-zinc-500 font-mono-tech tracking-tighter uppercase mt-0.5">V9.0.3 STABLE</p>
+              <p className="text-[8px] text-zinc-500 font-mono-tech tracking-tighter uppercase mt-0.5">V9.1.0 SEAMLESS</p>
             </div>
           </div>
           <div className="flex gap-4 font-mono-tech">
@@ -490,86 +491,100 @@ const App: React.FC = () => {
 
           {(state.status === 'picking' || state.status === 'playing') && (
             <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in overflow-hidden relative">
-              {/* Picking UI */}
-              <div className={`absolute top-0 w-full text-center transition-opacity duration-500 ${selectedCardIdx !== null || state.status === 'playing' ? 'opacity-0 pointer-events-none' : 'opacity-100'} shrink-0 pt-10`}>
+              {/* Header Title for Picking */}
+              <div className={`absolute top-0 w-full text-center transition-opacity duration-500 ${selectedCardIdx !== null || state.status === 'playing' ? 'opacity-0 pointer-events-none' : 'opacity-100'} pt-8`}>
                 <h2 className="text-xl sm:text-2xl font-header text-white mb-1 uppercase tracking-[0.3em] animate-pulse">單元提取 / Pull</h2>
                 <div className="text-[10px] font-mono-tech text-cyan-500 uppercase tracking-widest">Select an encrypted data packet</div>
               </div>
 
-              {/* Card Container (Fan and Playing Card integrated) */}
-              <div className="relative w-full max-w-4xl h-72 sm:h-[400px] flex items-center justify-center perspective-1000">
-                {/* 只有在狀態為 picking 或者正在播放動畫時才顯示卡堆 */}
+              {/* Seamless Integrated Container */}
+              <div className="relative w-full max-w-4xl h-80 sm:h-[420px] flex items-center justify-center perspective-1000">
+                
+                {/* 1. Fan Cards rendering (Hidden one by one as picked) */}
                 {(state.status === 'picking' || isDrawing) && state.deck.map((card, idx) => {
                   const isSelected = selectedCardIdx === idx;
                   const isAnySelected = selectedCardIdx !== null;
                   
-                  const angle = (idx - (state.deck.length - 1) / 2) * 8;
-                  const xOffset = (idx - (state.deck.length - 1) / 2) * (window.innerWidth < 640 ? 30 : 45);
+                  // Calculated Layout
+                  const fanAngle = (idx - (state.deck.length - 1) / 2) * 8;
+                  const fanX = (idx - (state.deck.length - 1) / 2) * (window.innerWidth < 640 ? 30 : 45);
                   
-                  let transform = `translateX(${xOffset}px) rotate(${angle}deg)`;
-                  let zIndex = idx;
-                  let opacity = 1;
+                  let cardTransform = `translateX(${fanX}px) rotate(${fanAngle}deg)`;
+                  let cardZIndex = idx;
+                  let cardOpacity = 1;
                   
                   if (isSelected) {
-                    // 移動到中央並縮放
-                    transform = `translate(0, ${window.innerWidth < 640 ? '-30px' : '-40px'}) scale(${window.innerWidth < 640 ? 1.6 : 1.9}) rotate(${isFlipped ? '180deg' : '0deg'})`;
-                    zIndex = 1000;
+                    // Flies to Center and remains there while scanning/flipping
+                    const centerScale = window.innerWidth < 640 ? 2.0 : 2.4;
+                    cardTransform = `translate(0, ${window.innerWidth < 640 ? '-40px' : '-50px'}) scale(${centerScale}) rotate(${isFlipped ? '180deg' : '0deg'})`;
+                    cardZIndex = 1000;
                   } else if (isAnySelected) {
-                    opacity = 0;
-                    transform = `translateX(${xOffset}px) translateY(200px) rotate(${angle}deg)`;
+                    // Hide other cards immediately when one is picked
+                    cardOpacity = 0;
+                    cardTransform = `translateX(${fanX}px) translateY(200px) rotate(${fanAngle}deg)`;
                   }
 
                   return (
                     <div 
                       key={card.id || idx} 
                       onClick={() => pickCard(idx)} 
-                      style={{ transform, zIndex, opacity, transformStyle: 'preserve-3d' }}
-                      className={`absolute bottom-0 w-28 h-40 sm:w-32 sm:h-48 transition-all duration-700 ease-out shadow-[0_10px_30px_rgba(0,0,0,0.5)] cursor-pointer rounded-2xl overflow-hidden ${isSelected ? 'ring-2 ring-cyan-400' : 'bg-zinc-900 border-2 border-cyan-500/20'}`}
+                      style={{ 
+                        transform: cardTransform, 
+                        zIndex: cardZIndex, 
+                        opacity: cardOpacity, 
+                        transformStyle: 'preserve-3d' 
+                      }}
+                      className={`absolute bottom-0 w-28 h-40 sm:w-32 sm:h-48 transition-all duration-700 ease-out shadow-[0_10px_40px_rgba(0,0,0,0.6)] cursor-pointer rounded-2xl overflow-hidden ${isSelected ? 'ring-2 ring-cyan-400' : 'bg-zinc-900 border-2 border-cyan-500/20'}`}
                     >
-                      {/* Card Back (Scanning view) */}
+                      {/* Back Side (The data packet / scanning surface) */}
                       <div className="absolute inset-0 bg-zinc-900 flex flex-col items-center justify-center backface-hidden border-2 border-zinc-800 rounded-2xl">
                          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20" />
                          <Scan className={`w-10 h-10 sm:w-12 sm:h-12 ${isSelected && isScanning ? 'text-cyan-400 animate-pulse' : 'text-zinc-800'}`} />
-                         {isSelected && isScanning && <div className="absolute top-0 left-0 w-full h-1 bg-cyan-400 animate-scan-line shadow-[0_0_15px_cyan]" />}
+                         {isSelected && isScanning && (
+                           <div className="absolute top-0 left-0 w-full h-1 bg-cyan-400 animate-scan-line shadow-[0_0_15px_cyan]" />
+                         )}
+                         <div className="absolute bottom-2 text-[6px] font-mono-tech text-zinc-700 tracking-tighter">PROTO_DATA_PACKET_{idx}</div>
                       </div>
 
-                      {/* Card Front (Decoded content) */}
+                      {/* Front Side (The revealed content) */}
                       {isSelected && (
                         <div className={`absolute inset-0 bg-gradient-to-br ${card.type === '開心' ? 'from-emerald-950 to-zinc-950' : 'from-rose-950 to-zinc-950'} flex flex-col p-4 [transform:rotateY(180deg)] backface-hidden rounded-2xl border-2 ${card.type === '開心' ? 'border-emerald-500/40' : 'border-rose-500/40'}`}>
-                           <div className="flex-1 flex flex-col items-center justify-center text-center gap-3">
-                              <div className={`p-4 bg-zinc-900/60 rounded-full border ${card.type === '開心' ? 'border-emerald-500/30' : 'border-rose-500/30'}`}>
-                                 {React.createElement(ICON_MAP[card.icon] || Rocket, { className: `w-8 h-8 ${card.type === '開心' ? 'text-emerald-400' : 'text-rose-400'}` })}
+                           <div className="flex-1 flex flex-col items-center justify-center text-center gap-2">
+                              <div className={`p-3 bg-zinc-900/60 rounded-full border ${card.type === '開心' ? 'border-emerald-500/30' : 'border-rose-500/30'}`}>
+                                 {React.createElement(ICON_MAP[card.icon] || Rocket, { className: `w-7 h-7 ${card.type === '開心' ? 'text-emerald-400' : 'text-rose-400'}` })}
                               </div>
-                              <h3 className="text-[10px] sm:text-xs font-black text-white leading-tight px-1">{card.cn}</h3>
+                              <h3 className="text-[9px] sm:text-[10px] font-black text-white leading-tight px-0.5 line-clamp-4">{card.cn}</h3>
                            </div>
-                           <div className={`text-center font-mono-tech text-[8px] ${card.type === '開心' ? 'text-emerald-500' : 'text-rose-500'} tracking-widest uppercase`}>{card.type === '開心' ? 'POSITIVE' : 'STRESS'}</div>
+                           <div className={`text-center font-mono-tech text-[6px] ${card.type === '開心' ? 'text-emerald-500' : 'text-rose-500'} tracking-[0.2em] uppercase mt-auto`}>{card.type === '開心' ? 'POSITIVE' : 'STRESS'}</div>
                         </div>
                       )}
                     </div>
                   );
                 })}
 
-                {/* Final Playing Card (After transition is done) */}
+                {/* 2. Playing UI (Revealed Card and Buttons) */}
                 {state.status === 'playing' && state.currentCard && !isDrawing && (
-                  <div className="flex flex-col items-center gap-8 animate-in zoom-in">
-                    <div className={`relative w-[220px] h-[320px] sm:w-[280px] sm:h-[400px] transition-all duration-700 preserve-3d shrink-0 ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}>
-                      <div className="absolute inset-0 bg-gradient-to-br from-zinc-800 to-zinc-950 border-4 border-zinc-800 rounded-[32px] flex flex-col items-center justify-center backface-hidden shadow-2xl overflow-hidden">
+                  <div className="flex flex-col items-center gap-6 sm:gap-10 animate-in zoom-in h-full">
+                    {/* The Card in Playing State (Uses same proportions as the fan's centered card) */}
+                    <div className={`relative w-[220px] h-[320px] sm:w-[280px] sm:h-[400px] transition-all duration-700 preserve-3d shrink-0 [transform:rotateY(180deg)] shadow-2xl`}>
+                      <div className="absolute inset-0 bg-zinc-900 flex flex-col items-center justify-center backface-hidden border-4 border-zinc-800 rounded-[32px]">
                          <Scan className="w-14 h-14 text-zinc-700" />
                       </div>
-                      <div className={`absolute inset-0 bg-gradient-to-br ${state.currentCard.type === '開心' ? 'from-emerald-950/90 to-zinc-950' : 'from-rose-950/90 to-zinc-950'} border-4 ${state.currentCard.type === '開心' ? 'border-emerald-500/50 shadow-emerald-500/20' : 'border-rose-500/50 shadow-rose-500/20'} rounded-[32px] flex flex-col p-5 [transform:rotateY(180deg)] backface-hidden shadow-2xl`}>
+                      <div className={`absolute inset-0 bg-gradient-to-br ${state.currentCard.type === '開心' ? 'from-emerald-950 to-zinc-950' : 'from-rose-950 to-zinc-950'} border-4 ${state.currentCard.type === '開心' ? 'border-emerald-500/50 shadow-emerald-500/20' : 'border-rose-500/50 shadow-rose-500/20'} rounded-[32px] flex flex-col p-6 [transform:rotateY(180deg)] backface-hidden`}>
                          <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center gap-4 sm:gap-6">
                             <div className={`p-6 sm:p-8 bg-zinc-900/80 rounded-full border-2 ${state.currentCard.type === '開心' ? 'border-emerald-500/30' : 'border-rose-500/30'} backdrop-blur-sm shadow-inner shrink-0`}>
                                {React.createElement(ICON_MAP[state.currentCard.icon] || Rocket, { className: `w-10 h-10 sm:w-14 sm:h-14 ${state.currentCard.type === '開心' ? 'text-emerald-400' : 'text-rose-400'}` })}
                             </div>
                             <h3 className="text-md sm:text-xl font-black text-white leading-relaxed line-clamp-4">{state.currentCard.cn}</h3>
                          </div>
-                         <div className={`relative z-10 text-center font-mono-tech text-[9px] ${state.currentCard.type === '開心' ? 'text-emerald-500' : 'text-rose-500'} tracking-widest uppercase`}>{state.currentCard.type === '開心' ? 'POSITIVE' : 'STRESS'}</div>
+                         <div className={`relative z-10 text-center font-mono-tech text-[9px] ${state.currentCard.type === '開心' ? 'text-emerald-500' : 'text-rose-500'} tracking-[0.3em] uppercase mt-4`}>{state.currentCard.type === '開心' ? 'EMOTION: POSITIVE' : 'EMOTION: STRESS'}</div>
                       </div>
                     </div>
                     
-                    <div className="flex gap-4 w-full max-w-[300px] sm:max-w-md px-2 animate-in slide-in-from-bottom shrink-0">
-                      <button onClick={() => handleDecision('開心')} className="flex-1 py-4 bg-emerald-600/10 border-2 border-emerald-500 text-emerald-400 rounded-2xl font-black text-lg sm:text-xl active:scale-95 transition-all shadow-lg">開心</button>
-                      <button onClick={() => handleDecision('不開心')} className="flex-1 py-4 bg-rose-600/10 border-2 border-rose-500 text-rose-400 rounded-2xl font-black text-lg sm:text-xl active:scale-95 transition-all shadow-lg">不開心</button>
+                    {/* Decision Buttons - Slide in from bottom after card flip is stable */}
+                    <div className="flex gap-4 w-full max-w-[300px] sm:max-w-md px-2 animate-in slide-in-from-bottom duration-500 shrink-0">
+                      <button onClick={() => handleDecision('開心')} className="flex-1 py-4 sm:py-5 bg-emerald-600/10 border-2 border-emerald-500 text-emerald-400 rounded-2xl font-black text-lg sm:text-xl active:scale-95 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]">開心</button>
+                      <button onClick={() => handleDecision('不開心')} className="flex-1 py-4 sm:py-5 bg-rose-600/10 border-2 border-rose-500 text-rose-400 rounded-2xl font-black text-lg sm:text-xl active:scale-95 transition-all shadow-[0_0_20px_rgba(244,63,94,0.2)]">不開心</button>
                     </div>
                   </div>
                 )}
@@ -588,7 +603,7 @@ const App: React.FC = () => {
                  {isDecompressing && (
                    <div className="absolute inset-0 z-50 bg-cyan-900/90 backdrop-blur-xl flex flex-col items-center justify-center text-white">
                       <Wind className="w-16 h-16 sm:w-20 sm:h-20 text-cyan-300 animate-spin-slow opacity-80" />
-                      <h3 className="text-xl sm:text-2xl font-header mt-6 tracking-widest uppercase">核心散熱中...</h3>
+                      <h3 className="text-xl sm:text-2xl font-header mt-6 tracking-widest uppercase italic">核心散熱中...</h3>
                    </div>
                  )}
 
@@ -596,7 +611,7 @@ const App: React.FC = () => {
                    {state.sopStep === 1 && (
                      <div className="text-center animate-in zoom-in w-full max-w-xs shrink-0">
                        <h3 className="text-lg sm:text-xl font-black text-white mb-1 uppercase tracking-widest">核心加壓</h3>
-                       <p className="text-zinc-500 text-[9px] sm:text-[10px] mb-6 italic uppercase">Hold to stabilize core energy</p>
+                       <p className="text-zinc-500 text-[9px] sm:text-[10px] mb-6 italic uppercase">Maintain pressure to stabilize energy</p>
                        
                        <div className="relative w-40 h-40 sm:w-52 sm:h-52 mx-auto shrink-0">
                           <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
@@ -612,7 +627,7 @@ const App: React.FC = () => {
                             }}
                             className={`absolute inset-3 rounded-full border-2 sm:border-4 transition-all flex flex-col items-center justify-center ${pressure >= 100 ? 'bg-emerald-600 border-emerald-400 scale-105 shadow-[0_0_30px_emerald]' : 'bg-rose-600 border-rose-400 shadow-lg active:scale-95'}`}
                           >
-                            <span className="text-white font-black text-sm sm:text-lg uppercase tracking-tighter leading-none">{pressure >= 100 ? 'SUCCESS' : isPressing ? '加壓中' : 'HOLD'}</span>
+                            <span className="text-white font-black text-sm sm:text-lg uppercase tracking-tighter leading-none">{pressure >= 100 ? 'READY' : isPressing ? '加壓中' : 'HOLD'}</span>
                             {pressure < 100 && <span className="text-white/60 text-[8px] font-mono-tech mt-1">{Math.round(pressure)}%</span>}
                           </button>
                        </div>
@@ -620,9 +635,9 @@ const App: React.FC = () => {
                    )}
 
                    {state.sopStep === 2 && (
-                     <div className="text-center w-full max-sm animate-in slide-in-from-right flex flex-col items-center shrink-0">
-                       <h3 className="text-lg sm:text-xl font-black text-white mb-1 tracking-widest uppercase shrink-0">熱能冷卻</h3>
-                       <p className="text-zinc-500 text-[9px] sm:text-[10px] mb-4 sm:mb-6 italic uppercase shrink-0">Breathing: {breathCount}/{state.missionConfig.breathCycles}</p>
+                     <div className="text-center w-full max-w-sm animate-in slide-in-from-right flex flex-col items-center shrink-0">
+                       <h3 className="text-lg sm:text-xl font-black text-white mb-1 tracking-widest uppercase">熱能冷卻</h3>
+                       <p className="text-zinc-500 text-[9px] sm:text-[10px] mb-4 sm:mb-6 italic uppercase">Synchronization: {breathCount}/{state.missionConfig.breathCycles}</p>
                        
                        <div className="relative w-48 h-48 sm:w-60 sm:h-60 border-2 sm:border-4 border-cyan-500/10 rounded-full flex items-center justify-center mb-6 shrink-0 max-h-[40vh]">
                           <div 
@@ -638,14 +653,14 @@ const App: React.FC = () => {
                          ))}
                        </div>
                        
-                       <button onClick={() => { playSfx('click'); setState(prev => ({ ...prev, sopStep: 3 })); }} disabled={breathCount < state.missionConfig.breathCycles} className="w-full py-3.5 bg-cyan-600 disabled:opacity-20 text-white rounded-2xl font-black text-lg border-b-6 border-cyan-950 transition-all shadow-lg active:scale-95 shrink-0">確認穩定 / OK</button>
+                       <button onClick={() => { playSfx('click'); setState(prev => ({ ...prev, sopStep: 3 })); }} disabled={breathCount < state.missionConfig.breathCycles} className="w-full py-4 bg-cyan-600 disabled:opacity-20 text-white rounded-2xl font-black text-lg border-b-6 border-cyan-950 transition-all shadow-lg active:scale-95">確認穩定 / OK</button>
                      </div>
                    )}
 
                    {state.sopStep === 3 && (
                      <div className="w-full h-full flex flex-col animate-in slide-in-from-right py-1">
                         {state.currentCard && (
-                          <div className="bg-zinc-900/80 border border-zinc-800 p-2 sm:p-2.5 rounded-xl mb-3 flex items-center gap-3 animate-in fade-in shrink-0">
+                          <div className="bg-zinc-900/80 border border-zinc-800 p-2 sm:p-3 rounded-xl mb-3 flex items-center gap-3 animate-in fade-in shrink-0">
                             <div className="p-1.5 bg-rose-500/10 rounded-lg border border-rose-500/30">
                               {React.createElement(ICON_MAP[state.currentCard.icon] || HelpCircle, { className: 'text-rose-400 w-4 h-4' })}
                             </div>
@@ -661,7 +676,7 @@ const App: React.FC = () => {
                               <div className="grid grid-cols-3 gap-2">
                                 {EMOTIONS.map(e => (
                                   <button key={e.id} onClick={() => { playSfx('click'); setSopSelection(prev => ({ ...prev, emotion: e.id })); }} 
-                                    className={`py-2.5 sm:py-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all active:scale-95 ${sopSelection.emotion === e.id ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-glow-amber' : 'bg-zinc-900/50 border-zinc-800 text-zinc-600'}`}>
+                                    className={`py-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all active:scale-95 ${sopSelection.emotion === e.id ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.4)]' : 'bg-zinc-900/50 border-zinc-800 text-zinc-600'}`}>
                                     {React.createElement(ICON_MAP[e.icon] || HelpCircle, { size: 18 })}
                                     <span className="text-[9px] font-bold">{e.cn}</span>
                                   </button>
@@ -673,7 +688,7 @@ const App: React.FC = () => {
                               <div className="grid grid-cols-3 gap-2">
                                 {NEEDS.map(n => (
                                   <button key={n.id} onClick={() => { playSfx('click'); setSopSelection(prev => ({ ...prev, need: n.id })); }} 
-                                    className={`py-2.5 sm:py-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all active:scale-95 ${sopSelection.need === n.id ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-glow-cyan' : 'bg-zinc-900/50 border-zinc-800 text-zinc-600'}`}>
+                                    className={`py-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all active:scale-95 ${sopSelection.need === n.id ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'bg-zinc-900/50 border-zinc-800 text-zinc-600'}`}>
                                     {React.createElement(ICON_MAP[n.icon] || LifeBuoy, { size: 18 })}
                                     <span className="text-[9px] font-bold">{n.cn}</span>
                                   </button>
@@ -690,7 +705,7 @@ const App: React.FC = () => {
           )}
 
           {state.status === 'result' && (
-            <div className="flex-1 flex flex-col items-center justify-center text-center px-4 animate-in zoom-in overflow-y-auto">
+            <div className="flex-1 flex flex-col items-center justify-center text-center px-4 animate-in zoom-in overflow-y-auto py-6">
               <div className="w-full max-w-md bg-zinc-900 border-2 sm:border-4 border-emerald-500/30 rounded-[40px] sm:rounded-[48px] p-8 sm:p-10 shadow-2xl relative overflow-hidden shrink-0">
                 <Trophy className="w-16 h-16 sm:w-20 sm:h-20 text-emerald-400 mx-auto mb-6 sm:mb-8 animate-bounce" />
                 <h2 className="text-xl sm:text-2xl font-header text-white mb-2 uppercase tracking-widest">任務完成 / Success</h2>
@@ -748,10 +763,6 @@ const App: React.FC = () => {
         @keyframes scan-line { 0% { top: -10%; } 100% { top: 110%; } }
         .animate-scan-line { animation: scan-line 1.5s ease-in-out infinite; }
         .animate-spin-slow { animation: spin 4s linear infinite; }
-        .animate-bounce-short { animation: bounce-short 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        @keyframes bounce-short { 0%, 100% { transform: scale(1.05); } 50% { transform: scale(1.15); } }
-        .shadow-glow-amber { box-shadow: 0 0 15px rgba(245, 158, 11, 0.5); }
-        .shadow-glow-cyan { box-shadow: 0 0 15px rgba(34, 211, 238, 0.5); }
         .perspective-1000 { perspective: 1000px; }
         .preserve-3d { transform-style: preserve-3d; }
         .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
