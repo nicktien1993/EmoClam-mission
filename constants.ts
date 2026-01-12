@@ -33,7 +33,7 @@ export const HOME_CARDS: Card[] = [
   { id: 'h11', type: '開心', cn: '跟爸爸一起去公園騎腳踏車。', icon: 'Activity' },
   { id: 'h12', type: '開心', cn: '拼圖終於拼完了，好有成就感！', icon: 'Trophy' },
   { id: 'h13', type: '不開心', cn: '最喜歡的小被被在洗澡不能抱...', icon: 'Cloud', suggest: { emo: 'sad', need: 'music' } },
-  { id: 'h14', type: '開心', cn: '睡覺前 and 爸爸媽媽抱抱。', icon: 'Heart' },
+  { id: 'h14', type: '開心', cn: '睡覺前和爸爸媽媽抱抱。', icon: 'Heart' },
   { id: 'h15', type: '開心', cn: '今天學會自己整理書包！', icon: 'CheckCircle2' },
 ];
 
