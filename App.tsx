@@ -476,9 +476,9 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <main className="flex-1 p-2 sm:p-4 relative overflow-hidden flex flex-col min-h-0">
+        <main className="flex-1 p-2 sm:p-4 relative flex flex-col min-h-0 overflow-visible">
           {state.status === 'splash' && (
-            <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
+            <div className="flex-1 flex flex-col items-center justify-center text-center px-6 overflow-hidden">
               <div className="relative mb-8">
                  <div className="absolute -inset-10 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" />
                  <div className="relative w-28 h-28 sm:w-32 sm:h-32 bg-zinc-800 rounded-3xl border-4 border-cyan-400 flex items-center justify-center shadow-[0_0_30px_rgba(34,211,238,0.3)]">
@@ -529,7 +529,7 @@ const App: React.FC = () => {
           )}
 
           {state.status === 'ready' && (
-            <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in py-6">
+            <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in py-6 overflow-hidden">
               <div className="w-full max-w-xl bg-zinc-800/40 border-2 sm:border-4 border-zinc-700 rounded-[40px] sm:rounded-[48px] p-6 sm:p-8 text-center shadow-2xl relative">
                 <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-zinc-900 px-4 sm:px-6 py-1 border-2 border-zinc-700 rounded-full text-[10px] text-zinc-500 font-mono-tech font-black uppercase">Briefing</div>
                 <h2 className="text-2xl sm:text-3xl font-header text-white mb-2 uppercase tracking-widest mt-4">任務準備 / Ready</h2>
@@ -543,13 +543,13 @@ const App: React.FC = () => {
           )}
 
           {(state.status === 'picking' || state.status === 'playing') && (
-            <div className="flex-1 flex flex-col items-center animate-in fade-in overflow-hidden relative pb-4">
+            <div className="flex-1 flex flex-col items-center animate-in fade-in relative pb-4 overflow-visible">
               <div className={`absolute top-0 w-full text-center transition-opacity duration-500 ${selectedCardIdx !== null || state.status === 'playing' ? 'opacity-0 pointer-events-none' : 'opacity-100'} pt-8`}>
                 <h2 className="text-xl sm:text-2xl font-header text-white mb-1 uppercase tracking-[0.3em] animate-pulse">單元提取 / Pull</h2>
                 <div className="text-[10px] font-mono-tech text-cyan-500 uppercase tracking-widest">Select an encrypted data packet</div>
               </div>
 
-              <div className="relative w-full max-w-4xl flex-1 flex flex-col items-center justify-center perspective-1000 min-h-0">
+              <div className="relative w-full max-w-4xl flex-1 flex flex-col items-center justify-center perspective-1000 min-h-0 overflow-visible">
                 {(state.status === 'picking' || isDrawing) && state.deck.map((card, idx) => {
                   const isSelected = selectedCardIdx === idx;
                   const isAnySelected = selectedCardIdx !== null;
@@ -562,8 +562,10 @@ const App: React.FC = () => {
                   let cardOpacity = 1;
                   
                   if (isSelected) {
-                    const centerScale = window.innerWidth < 640 ? 1.8 : 2.4;
-                    cardTransform = `translate(0, ${window.innerWidth < 640 ? '-20px' : '-50px'}) scale(${centerScale}) rotate(${isFlipped ? '180deg' : '0deg'})`;
+                    const centerScale = window.innerWidth < 640 ? 1.6 : 2.4;
+                    // 在移動端稍微減少向上位移，避免頂部被切到
+                    const translateY = window.innerWidth < 640 ? '-10px' : '-50px';
+                    cardTransform = `translate(0, ${translateY}) scale(${centerScale}) rotate(${isFlipped ? '180deg' : '0deg'})`;
                     cardZIndex = 1000;
                   } else if (isAnySelected) {
                     cardOpacity = 0;
@@ -604,7 +606,7 @@ const App: React.FC = () => {
                 })}
 
                 {state.status === 'playing' && state.currentCard && !isDrawing && (
-                  <div className="flex flex-col items-center justify-center gap-4 sm:gap-8 animate-in zoom-in w-full h-full py-2">
+                  <div className="flex flex-col items-center justify-center gap-4 sm:gap-8 animate-in zoom-in w-full h-full py-2 overflow-visible">
                     <div className={`relative w-[210px] h-[300px] sm:w-[280px] sm:h-[400px] transition-all duration-700 preserve-3d shrink-0 [transform:rotateY(180deg)] shadow-2xl`}>
                       <div className="absolute inset-0 bg-zinc-900 flex flex-col items-center justify-center backface-hidden border-4 border-zinc-800 rounded-[32px]">
                          <Scan className="w-14 h-14 text-zinc-700" />
