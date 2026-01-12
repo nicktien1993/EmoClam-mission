@@ -69,17 +69,17 @@ const playSfx = (type: string, customDuration?: number) => {
 
   switch (type) {
     case 'click': playComplex([880, 1760], 'sine', 0.1, 0.03); break;
-    case 'draw': playComplex([200, 300, 400], 'sawtooth', 0.4, 0.02); break;
+    case 'draw': playComplex([200, 300, 400], 'sawtooth', 0.6, 0.02); break;
     case 'scan': 
       const osc = ctx.createOscillator();
       const g = ctx.createGain();
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(50, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.6);
-      g.gain.setValueAtTime(0.02, ctx.currentTime);
-      g.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.6);
+      osc.frequency.setValueAtTime(40, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + (customDuration || 2.2));
+      g.gain.setValueAtTime(0.015, ctx.currentTime);
+      g.gain.linearRampToValueAtTime(0, ctx.currentTime + (customDuration || 2.2));
       osc.connect(g); g.connect(ctx.destination);
-      osc.start(); osc.stop(ctx.currentTime + 0.6);
+      osc.start(); osc.stop(ctx.currentTime + (customDuration || 2.2));
       break;
     case 'correct': playComplex([600, 800, 1200], 'sine', 0.6, 0.05); break;
     case 'wrong': playComplex([150, 100], 'square', 0.5, 0.03); break;
@@ -100,7 +100,7 @@ const playSfx = (type: string, customDuration?: number) => {
 };
 
 const DEFAULT_MISSION_CONFIG: MissionConfig = {
-  cardCount: 5,
+  cardCount: 4, 
   enablePressure: true,
   enableBreath: true,
   enableReport: true,
@@ -135,7 +135,6 @@ const App: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  // 計時器 Refs
   const timers = useRef<number[]>([]);
   const pressureIntervalRef = useRef<number | null>(null);
   
@@ -196,21 +195,29 @@ const App: React.FC = () => {
     playSfx('click');
     setState(prev => {
       let pool: Card[] = [];
-      if (prev.currentRoute === 'school') pool = [...SCHOOL_CARDS];
-      else if (prev.currentRoute === 'home') pool = [...HOME_CARDS];
-      else if (prev.currentRoute === 'playground') pool = [...PLAYGROUND_CARDS];
+      if (prev.currentRoute === 'school') pool = SCHOOL_CARDS;
+      else if (prev.currentRoute === 'home') pool = HOME_CARDS;
+      else if (prev.currentRoute === 'playground') pool = PLAYGROUND_CARDS;
 
-      let baseDeck = [...pool].sort(() => Math.random() - 0.5);
-      const count = Math.min(10, Math.max(1, prev.missionConfig.cardCount));
-      let finalDeck: Card[] = [];
-      if (count === 1) {
-        finalDeck = [BOSS_CARDS[Math.floor(Math.random() * BOSS_CARDS.length)]];
-      } else {
-         const selectedPool = baseDeck.slice(0, count - 1);
-         const boss = BOSS_CARDS[Math.floor(Math.random() * BOSS_CARDS.length)];
-         finalDeck = [...selectedPool, boss].sort(() => Math.random() - 0.5);
-      }
-      return { ...prev, deck: finalDeck, totalRounds: finalDeck.length, status: 'picking' };
+      const happyPool = pool.filter(c => c.type === '開心').sort(() => Math.random() - 0.5);
+      const unhappyPool = pool.filter(c => c.type === '不開心').sort(() => Math.random() - 0.5);
+      
+      const totalCount = Math.min(12, Math.max(1, prev.missionConfig.cardCount));
+      const happyCount = Math.max(1, Math.floor(totalCount / 4));
+      const unhappyCount = totalCount - happyCount;
+
+      const finalDeck: Card[] = [];
+      finalDeck.push(...happyPool.slice(0, happyCount));
+      const boss = BOSS_CARDS[Math.floor(Math.random() * BOSS_CARDS.length)];
+      finalDeck.push(boss);
+      finalDeck.push(...unhappyPool.slice(0, unhappyCount - 1));
+
+      return { 
+        ...prev, 
+        deck: finalDeck.sort(() => Math.random() - 0.5), 
+        totalRounds: finalDeck.length, 
+        status: 'picking' 
+      };
     });
   }, []);
 
@@ -226,18 +233,15 @@ const App: React.FC = () => {
     setIsFlipped(false);
     setIsScanning(false);
 
-    // 1. 移動動畫延遲 (700ms)
     const moveTimer = window.setTimeout(() => {
       setIsScanning(true);
-      playSfx('scan');
+      playSfx('scan', 2.2);
 
-      // 2. 掃描解碼 (1000ms)
       const scanTimer = window.setTimeout(() => {
         setIsScanning(false);
         setIsFlipped(true);
         playSfx('correct');
 
-        // 3. 翻牌後自動進入互動階段 (500ms)
         const transitionTimer = window.setTimeout(() => {
           setState(prev => {
             const finalCard = prev.deck[cardIndex];
@@ -253,11 +257,11 @@ const App: React.FC = () => {
           });
           setIsDrawing(false);
           setSelectedCardIdx(null);
-        }, 600);
+        }, 800);
         timers.current.push(transitionTimer);
-      }, 1000);
+      }, 2200);
       timers.current.push(scanTimer);
-    }, 700);
+    }, 1200);
     timers.current.push(moveTimer);
   }, [isDrawing, state.deck, state.status]);
 
@@ -304,7 +308,32 @@ const App: React.FC = () => {
     }
   }, [state.currentCard, addLog, triggerSOP, nextTurn]);
 
-  // --- 加壓系統核心邏輯 ---
+  // --- 通訊回報處理 (判斷正確性並撥放音效) ---
+  const handleSopSelection = useCallback((type: 'emotion' | 'need', id: string) => {
+    if (!state.currentCard) return;
+    
+    // 檢查是否有建議值，如果有則判斷正確性
+    const suggest = state.currentCard.suggest;
+    let isCorrect = true;
+    
+    if (suggest) {
+      if (type === 'emotion' && suggest.emo) {
+        isCorrect = (suggest.emo === id);
+      } else if (type === 'need' && suggest.need) {
+        isCorrect = (suggest.need === id);
+      }
+    }
+
+    // 正確撥放 correct，錯誤撥放 wrong
+    if (isCorrect) {
+      playSfx('correct');
+    } else {
+      playSfx('wrong');
+    }
+
+    setSopSelection(prev => ({ ...prev, [type]: id }));
+  }, [state.currentCard]);
+
   const startPressure = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
     if (pressure >= 100 || isDecompressing) return;
@@ -320,7 +349,7 @@ const App: React.FC = () => {
         if (p >= 100) {
           if (pressureIntervalRef.current) clearInterval(pressureIntervalRef.current);
           pressureIntervalRef.current = null;
-          playSfx('correct'); // 滿值提示音
+          playSfx('correct');
           return 100;
         }
         return p + increment;
@@ -428,7 +457,7 @@ const App: React.FC = () => {
             </div>
             <div className="hidden sm:block">
               <h1 className="font-header text-xs sm:text-sm tracking-widest text-white uppercase leading-none">CORE NAVIGATOR</h1>
-              <p className="text-[8px] text-zinc-500 font-mono-tech tracking-tighter uppercase mt-0.5">V9.1.1 STABLE</p>
+              <p className="text-[8px] text-zinc-500 font-mono-tech tracking-tighter uppercase mt-0.5">V9.2.1 STABLE</p>
             </div>
           </div>
           <div className="flex gap-4 font-mono-tech">
@@ -514,17 +543,13 @@ const App: React.FC = () => {
           )}
 
           {(state.status === 'picking' || state.status === 'playing') && (
-            <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in overflow-hidden relative">
-              {/* Header Title for Picking */}
+            <div className="flex-1 flex flex-col items-center animate-in fade-in overflow-hidden relative pb-4">
               <div className={`absolute top-0 w-full text-center transition-opacity duration-500 ${selectedCardIdx !== null || state.status === 'playing' ? 'opacity-0 pointer-events-none' : 'opacity-100'} pt-8`}>
                 <h2 className="text-xl sm:text-2xl font-header text-white mb-1 uppercase tracking-[0.3em] animate-pulse">單元提取 / Pull</h2>
                 <div className="text-[10px] font-mono-tech text-cyan-500 uppercase tracking-widest">Select an encrypted data packet</div>
               </div>
 
-              {/* Seamless Integrated Container */}
-              <div className="relative w-full max-w-4xl h-80 sm:h-[420px] flex items-center justify-center perspective-1000">
-                
-                {/* 1. Fan Cards rendering */}
+              <div className="relative w-full max-w-4xl flex-1 flex flex-col items-center justify-center perspective-1000 min-h-0">
                 {(state.status === 'picking' || isDrawing) && state.deck.map((card, idx) => {
                   const isSelected = selectedCardIdx === idx;
                   const isAnySelected = selectedCardIdx !== null;
@@ -537,8 +562,8 @@ const App: React.FC = () => {
                   let cardOpacity = 1;
                   
                   if (isSelected) {
-                    const centerScale = window.innerWidth < 640 ? 2.0 : 2.4;
-                    cardTransform = `translate(0, ${window.innerWidth < 640 ? '-40px' : '-50px'}) scale(${centerScale}) rotate(${isFlipped ? '180deg' : '0deg'})`;
+                    const centerScale = window.innerWidth < 640 ? 1.8 : 2.4;
+                    cardTransform = `translate(0, ${window.innerWidth < 640 ? '-20px' : '-50px'}) scale(${centerScale}) rotate(${isFlipped ? '180deg' : '0deg'})`;
                     cardZIndex = 1000;
                   } else if (isAnySelected) {
                     cardOpacity = 0;
@@ -550,12 +575,17 @@ const App: React.FC = () => {
                       key={card.id || idx} 
                       onClick={() => pickCard(idx)} 
                       style={{ transform: cardTransform, zIndex: cardZIndex, opacity: cardOpacity, transformStyle: 'preserve-3d' }}
-                      className={`absolute bottom-0 w-28 h-40 sm:w-32 sm:h-48 transition-all duration-700 ease-out shadow-[0_10px_40px_rgba(0,0,0,0.6)] cursor-pointer rounded-2xl overflow-hidden ${isSelected ? 'ring-2 ring-cyan-400' : 'bg-zinc-900 border-2 border-cyan-500/20'}`}
+                      className={`absolute bottom-0 w-28 h-40 sm:w-32 sm:h-48 transition-all duration-[1200ms] ease-in-out shadow-[0_10px_40px_rgba(0,0,0,0.6)] cursor-pointer rounded-2xl overflow-hidden ${isSelected ? 'ring-2 ring-cyan-400' : 'bg-zinc-900 border-2 border-cyan-500/20'}`}
                     >
                       <div className="absolute inset-0 bg-zinc-900 flex flex-col items-center justify-center backface-hidden border-2 border-zinc-800 rounded-2xl">
                          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20" />
                          <Scan className={`w-10 h-10 sm:w-12 sm:h-12 ${isSelected && isScanning ? 'text-cyan-400 animate-pulse' : 'text-zinc-800'}`} />
-                         {isSelected && isScanning && <div className="absolute top-0 left-0 w-full h-1 bg-cyan-400 animate-scan-line shadow-[0_0_15px_cyan]" />}
+                         {isSelected && isScanning && (
+                           <>
+                             <div className="absolute top-0 left-0 w-full h-1 bg-cyan-400 animate-scan-line shadow-[0_0_15px_cyan]" />
+                             <div className="absolute top-0 left-0 w-full h-1 bg-white/20 animate-scan-line-slow opacity-30" />
+                           </>
+                         )}
                       </div>
 
                       {isSelected && (
@@ -573,27 +603,26 @@ const App: React.FC = () => {
                   );
                 })}
 
-                {/* 2. Playing UI */}
                 {state.status === 'playing' && state.currentCard && !isDrawing && (
-                  <div className="flex flex-col items-center gap-6 sm:gap-10 animate-in zoom-in h-full">
-                    <div className={`relative w-[220px] h-[320px] sm:w-[280px] sm:h-[400px] transition-all duration-700 preserve-3d shrink-0 [transform:rotateY(180deg)] shadow-2xl`}>
+                  <div className="flex flex-col items-center justify-center gap-4 sm:gap-8 animate-in zoom-in w-full h-full py-2">
+                    <div className={`relative w-[210px] h-[300px] sm:w-[280px] sm:h-[400px] transition-all duration-700 preserve-3d shrink-0 [transform:rotateY(180deg)] shadow-2xl`}>
                       <div className="absolute inset-0 bg-zinc-900 flex flex-col items-center justify-center backface-hidden border-4 border-zinc-800 rounded-[32px]">
                          <Scan className="w-14 h-14 text-zinc-700" />
                       </div>
                       <div className={`absolute inset-0 bg-gradient-to-br ${state.currentCard.type === '開心' ? 'from-emerald-950 to-zinc-950' : 'from-rose-950 to-zinc-950'} border-4 ${state.currentCard.type === '開心' ? 'border-emerald-500/50 shadow-emerald-500/20' : 'border-rose-500/50 shadow-rose-500/20'} rounded-[32px] flex flex-col p-6 [transform:rotateY(180deg)] backface-hidden`}>
-                         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center gap-4 sm:gap-6">
-                            <div className={`p-6 sm:p-8 bg-zinc-900/80 rounded-full border-2 ${state.currentCard.type === '開心' ? 'border-emerald-500/30' : 'border-rose-500/30'} backdrop-blur-sm shadow-inner shrink-0`}>
-                               {React.createElement(ICON_MAP[state.currentCard.icon] || Rocket, { className: `w-10 h-10 sm:w-14 sm:h-14 ${state.currentCard.type === '開心' ? 'text-emerald-400' : 'text-rose-400'}` })}
+                         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center gap-3 sm:gap-6">
+                            <div className={`p-5 sm:p-8 bg-zinc-900/80 rounded-full border-2 ${state.currentCard.type === '開心' ? 'border-emerald-500/30' : 'border-rose-500/30'} backdrop-blur-sm shadow-inner shrink-0`}>
+                               {React.createElement(ICON_MAP[state.currentCard.icon] || Rocket, { className: `w-9 h-9 sm:w-14 sm:h-14 ${state.currentCard.type === '開心' ? 'text-emerald-400' : 'text-rose-400'}` })}
                             </div>
-                            <h3 className="text-md sm:text-xl font-black text-white leading-relaxed line-clamp-4">{state.currentCard.cn}</h3>
+                            <h3 className="text-sm sm:text-xl font-black text-white leading-relaxed line-clamp-4">{state.currentCard.cn}</h3>
                          </div>
-                         <div className={`relative z-10 text-center font-mono-tech text-[9px] ${state.currentCard.type === '開心' ? 'text-emerald-500' : 'text-rose-500'} tracking-[0.3em] uppercase mt-4`}>{state.currentCard.type === '開心' ? 'EMOTION: POSITIVE' : 'EMOTION: STRESS'}</div>
+                         <div className={`relative z-10 text-center font-mono-tech text-[8px] sm:text-[9px] ${state.currentCard.type === '開心' ? 'text-emerald-500' : 'text-rose-500'} tracking-[0.3em] uppercase mt-4`}>{state.currentCard.type === '開心' ? 'EMOTION: POSITIVE' : 'EMOTION: STRESS'}</div>
                       </div>
                     </div>
                     
-                    <div className="flex gap-4 w-full max-w-[300px] sm:max-w-md px-2 animate-in slide-in-from-bottom duration-500 shrink-0">
-                      <button onClick={() => handleDecision('開心')} className="flex-1 py-4 sm:py-5 bg-emerald-600/10 border-2 border-emerald-500 text-emerald-400 rounded-2xl font-black text-lg sm:text-xl active:scale-95 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]">開心</button>
-                      <button onClick={() => handleDecision('不開心')} className="flex-1 py-4 sm:py-5 bg-rose-600/10 border-2 border-rose-500 text-rose-400 rounded-2xl font-black text-lg sm:text-xl active:scale-95 transition-all shadow-[0_0_20px_rgba(244,63,94,0.2)]">不開心</button>
+                    <div className="flex gap-4 w-full max-w-[280px] sm:max-w-md px-2 animate-in slide-in-from-bottom duration-500 shrink-0">
+                      <button onClick={() => handleDecision('開心')} className="flex-1 py-4 bg-emerald-600/10 border-2 border-emerald-500 text-emerald-400 rounded-2xl font-black text-lg active:scale-95 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]">開心</button>
+                      <button onClick={() => handleDecision('不開心')} className="flex-1 py-4 bg-rose-600/10 border-2 border-rose-500 text-rose-400 rounded-2xl font-black text-lg active:scale-95 transition-all shadow-[0_0_20px_rgba(244,63,94,0.2)]">不開心</button>
                     </div>
                   </div>
                 )}
@@ -623,7 +652,6 @@ const App: React.FC = () => {
                        <p className="text-zinc-500 text-[9px] sm:text-[10px] mb-6 italic uppercase">{pressure < 100 ? 'Hold to stabilize energy' : 'Energy stabilized. Execute purge.'}</p>
                        
                        <div className="relative w-44 h-44 sm:w-56 sm:h-56 mx-auto shrink-0 flex items-center justify-center">
-                          {/* 能量擴散環 */}
                           <div className={`absolute inset-0 rounded-full border-2 border-rose-500/20 transition-all ${isPressing ? 'scale-110 opacity-100 animate-pulse' : 'scale-100 opacity-0'}`} />
                           
                           <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
@@ -689,9 +717,11 @@ const App: React.FC = () => {
                               <label className="text-[9px] text-zinc-500 font-black block mb-3 pl-2 border-l-2 border-amber-500 uppercase tracking-widest">目前核心情緒 / Mood</label>
                               <div className="grid grid-cols-3 gap-2">
                                 {EMOTIONS.map(e => (
-                                  <button key={e.id} onClick={() => { playSfx('click'); setSopSelection(prev => ({ ...prev, emotion: e.id })); }} 
-                                    className={`py-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all active:scale-95 ${sopSelection.emotion === e.id ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.4)] animate-bounce-select scale-105' : 'bg-zinc-900/50 border-zinc-800 text-zinc-600'}`}>
-                                    {React.createElement(ICON_MAP[e.icon] || HelpCircle, { size: 18 })}
+                                  <button key={e.id} onClick={() => handleSopSelection('emotion', e.id)} 
+                                    className={`py-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all active:scale-95 ${sopSelection.emotion === e.id ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.4)] animate-bounce-select scale-110 z-10' : 'bg-zinc-900/50 border-zinc-800 text-zinc-600 hover:text-zinc-400 hover:border-zinc-700'}`}>
+                                    <div className={`${sopSelection.emotion === e.id ? 'animate-icon-wiggle' : ''}`}>
+                                      {React.createElement(ICON_MAP[e.icon] || HelpCircle, { size: 18 })}
+                                    </div>
                                     <span className="text-[9px] font-bold">{e.cn}</span>
                                   </button>
                                 ))}
@@ -701,9 +731,11 @@ const App: React.FC = () => {
                               <label className="text-[9px] text-zinc-500 font-black block mb-3 pl-2 border-l-2 border-cyan-500 uppercase tracking-widest">核心行動方針 / Action</label>
                               <div className="grid grid-cols-3 gap-2">
                                 {NEEDS.map(n => (
-                                  <button key={n.id} onClick={() => { playSfx('click'); setSopSelection(prev => ({ ...prev, need: n.id })); }} 
-                                    className={`py-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all active:scale-95 ${sopSelection.need === n.id ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.4)] animate-bounce-select scale-105' : 'bg-zinc-900/50 border-zinc-800 text-zinc-600'}`}>
-                                    {React.createElement(ICON_MAP[n.icon] || LifeBuoy, { size: 18 })}
+                                  <button key={n.id} onClick={() => handleSopSelection('need', n.id)} 
+                                    className={`py-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all active:scale-95 ${sopSelection.need === n.id ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.4)] animate-bounce-select scale-110 z-10' : 'bg-zinc-900/50 border-zinc-800 text-zinc-600 hover:text-zinc-400 hover:border-zinc-700'}`}>
+                                    <div className={`${sopSelection.need === n.id ? 'animate-icon-wiggle' : ''}`}>
+                                      {React.createElement(ICON_MAP[n.icon] || LifeBuoy, { size: 18 })}
+                                    </div>
                                     <span className="text-[9px] font-bold">{n.cn}</span>
                                   </button>
                                 ))}
@@ -775,10 +807,24 @@ const App: React.FC = () => {
       </div>
       <style>{`
         @keyframes scan-line { 0% { top: -10%; } 100% { top: 110%; } }
-        .animate-scan-line { animation: scan-line 1.5s ease-in-out infinite; }
+        @keyframes scan-line-slow { 0% { top: -20%; } 100% { top: 120%; } }
+        .animate-scan-line { animation: scan-line 1.1s ease-in-out infinite; }
+        .animate-scan-line-slow { animation: scan-line-slow 1.8s linear infinite; }
         .animate-spin-slow { animation: spin 4s linear infinite; }
-        @keyframes bounce-select { 0%, 100% { transform: scale(1.05); } 50% { transform: scale(1.15); } }
-        .animate-bounce-select { animation: bounce-select 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        
+        @keyframes bounce-select { 
+          0% { transform: scale(1); }
+          50% { transform: scale(1.15); }
+          100% { transform: scale(1.1); }
+        }
+        .animate-bounce-select { animation: bounce-select 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        
+        @keyframes icon-wiggle {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-4px) rotate(8deg); }
+        }
+        .animate-icon-wiggle { animation: icon-wiggle 1s ease-in-out infinite; }
+
         .perspective-1000 { perspective: 1000px; }
         .preserve-3d { transform-style: preserve-3d; }
         .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
